@@ -37,6 +37,7 @@ describe("api entrypoint runtime behavior", () => {
         "../routes/vibe",
         "../routes/system",
         "../routes/youtubeMusic",
+        "../routes/youtube",
         "../routes/tidalStreaming",
         "../routes/trackMappings",
         "../routes/playlistImport",
