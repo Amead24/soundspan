@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Mixed-media play queue: podcast episodes and music tracks now coexist in one queue. Queue music behind a playing episode (or queue episodes behind music) without interrupting what is playing; next/previous and auto-advance walk the queue across media types.
+- "Play next" and "Add to queue" actions for podcast episodes via a new episode overflow menu on the podcast page (blocked inside Listen Together sessions, which remain music-only).
+- Player queue panels (overlay player and `/queue` page) render episode entries with podcast cover art and show titles, and can play or remove them like tracks.
+- Persisted playback state (server and local) round-trips mixed queues; queues saved by older clients are migrated as music tracks automatically.
+
 ### Changed
 
 - Cover art is now resized server-side to the requested size (snapped to a 64–768px allowlist, never upscaled) and served as WebP when the browser supports it, instead of shipping multi-megapixel originals to thumbnail-sized renders. Resized variants are cached in Redis per size+format, and native cover files are downscaled on the fly.
@@ -19,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Service-worker image cache keys no longer include the rotating auth token, so cached cover art survives the daily token rotation instead of being re-downloaded every 24 hours.
 - Pausing playback while the lazy-loaded Video.js engine chunk is still downloading now completes the pending track load with autoplay suppressed (instead of silently dropping it), and pressing play during the download starts the queued track once ready rather than restarting the previous source from position 0; stopping still cancels the pending load, and the previously playing track is halted immediately when a segmented stream is selected.
 - The custom server's backend proxies (`/api`, `/rest`, Listen Together socket) now register their error handlers through the http-proxy-middleware v3 `on.error` API, restoring the structured 503 JSON response (`{ error, code }`) when the backend is unreachable — the previous v2-style `onError` option was silently ignored, so clients received hpm's plain-text default error instead.
+- Playing an episode from the podcast page while a queue is active now merges the episode (plus its not-yet-queued newer episodes) into the queue after the current item instead of replacing the whole queue, so queued music survives.
+- Skipping away from an episode before its saved-progress lookup finishes no longer seeks (and seek-locks) the newly playing item to that episode's resume position.
 
 ## [1.5.0] - 2026-03-27
 
