@@ -60,7 +60,7 @@ export default function QueuePage() {
 
     const resolveQueueSource = (
         index: number,
-        fallback?: "tidal" | "youtube",
+        fallback?: "tidal" | "youtube" | "youtube-direct",
     ): "local" | "tidal" | "youtube" => {
         const resolved = trackAvailability.get(index)?.source;
         if (resolved === "local" || resolved === "tidal" || resolved === "youtube") {
@@ -68,6 +68,9 @@ export default function QueuePage() {
         }
         if (fallback === "tidal" || fallback === "youtube") {
             return fallback;
+        }
+        if (fallback === "youtube-direct") {
+            return "youtube";
         }
         return "local";
     };
@@ -562,7 +565,7 @@ function NextTrackRow({
     queueLength: number;
     currentIndex: number;
     isInGroup: boolean;
-    resolveQueueSource: (index: number, fallback?: "tidal" | "youtube") => "local" | "tidal" | "youtube";
+    resolveQueueSource: (index: number, fallback?: "tidal" | "youtube" | "youtube-direct") => "local" | "tidal" | "youtube";
     onMoveUp: (index: number) => void;
     onMoveDown: (index: number) => void;
     onPlay: (index: number) => void;
@@ -692,7 +695,7 @@ function PreviousTrackRow({
     track: Track;
     idx: number;
     isInGroup: boolean;
-    resolveQueueSource: (index: number, fallback?: "tidal" | "youtube") => "local" | "tidal" | "youtube";
+    resolveQueueSource: (index: number, fallback?: "tidal" | "youtube" | "youtube-direct") => "local" | "tidal" | "youtube";
     trackAvailability: Map<number, AvailabilityItem>;
 }) {
     const availability = isInGroup ? trackAvailability.get(idx) : undefined;

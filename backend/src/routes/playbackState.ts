@@ -77,6 +77,8 @@ function sanitizeTrackQueueItem(item: any): Record<string, unknown> {
             item.provider?.providerTrackId ?? item.providerTrackId,
         tidalTrackId: item.provider?.tidalTrackId ?? item.tidalTrackId,
         youtubeVideoId: item.provider?.youtubeVideoId ?? item.youtubeVideoId,
+        youtubeAudioFormat:
+            item.provider?.youtubeAudioFormat ?? item.youtubeAudioFormat,
     });
     const sanitizedProvider = {
         source: provider.source,
@@ -99,6 +101,9 @@ function sanitizeTrackQueueItem(item: any): Record<string, unknown> {
                       64
                   ),
               }
+            : {}),
+        ...(provider.youtubeAudioFormat
+            ? { youtubeAudioFormat: provider.youtubeAudioFormat }
             : {}),
     };
 

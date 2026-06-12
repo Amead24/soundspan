@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- YouTube URL paste support on the search page: paste any YouTube link to stream it instantly or download the audio into your music library for offline listening (great for long DJ sets). Downloads run as background jobs with live progress on the preview card; the server watches each job and imports the file with a library scan when it finishes, even if you navigate away mid-download. Pasted-video playback survives queue restore and cross-device resume. Requires the ytmusic-streamer sidecar with the shared music volume mounted (`/music`, configurable via `YT_DOWNLOAD_DIR`); Helm deployments need an RWX music volume in multi-node clusters.
 - Mixed-media play queue: podcast episodes and music tracks now coexist in one queue. Queue music behind a playing episode (or queue episodes behind music) without interrupting what is playing; next/previous and auto-advance walk the queue across media types.
 - "Play next" and "Add to queue" actions for podcast episodes via a new episode overflow menu on the podcast page (blocked inside Listen Together sessions, which remain music-only).
 - Player queue panels (overlay player and `/queue` page) render episode entries with podcast cover art and show titles, and can play or remove them like tracks.

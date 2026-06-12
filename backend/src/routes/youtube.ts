@@ -1,0 +1,358 @@
+/**
+ * YouTube Routes
+ *
+ * Exposes the sidecar's /yt/ endpoints to the frontend for regular YouTube
+ * video streaming and downloading. All routes require session authentication
+ * but do NOT require YouTube Music OAuth — they work with any YouTube URL.
+ *
+ * Endpoints:
+ * - GET  /api/youtube/info?url=   — Video metadata
+ * - GET  /api/youtube/stream/:videoId — Proxied audio stream
+ * - POST /api/youtube/download    — Start a background download job (202)
+ * - GET  /api/youtube/download/:jobId — Poll job status; queues a library
+ *   scan once when the job completes
+ */
+
+import { Router, Request, Response } from "express";
+import { z } from "zod";
+import { requireAuth, requireAuthOrToken } from "../middleware/auth";
+import {
+    youtubeDownloadService,
+    watchYouTubeDownloadJobUntilTerminal,
+} from "../services/youtubeDownload";
+import { logger } from "../utils/logger";
+
+const router = Router();
+
+// ── Video Info ────────────────────────────────────────────────────
+
+const infoQuerySchema = z.object({
+    url: z.string().min(1, "url is required"),
+});
+
+/**
+ * @openapi
+ * /api/youtube/info:
+ *   get:
+ *     summary: Get YouTube video metadata
+ *     tags: [YouTube]
+ *     parameters:
+ *       - in: query
+ *         name: url
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Video metadata
+ */
+router.get("/info", requireAuth, async (req: Request, res: Response) => {
+    try {
+        const { url } = infoQuerySchema.parse(req.query);
+        const info = await youtubeDownloadService.getVideoInfo(url);
+        return res.json(info);
+    } catch (err: any) {
+        if (err instanceof z.ZodError) {
+            return res.status(400).json({ error: err.errors[0].message });
+        }
+        if (err.response?.status === 400) {
+            return res
+                .status(400)
+                .json({ error: err.response?.data?.detail || "Invalid YouTube URL" });
+        }
+        if (err.response?.status === 404) {
+            return res.status(404).json({ error: "Video not found" });
+        }
+        logger.error("[YouTube Route] Info fetch failed:", err.message);
+        return res.status(502).json({ error: "Failed to fetch video info" });
+    }
+});
+
+// ── Audio Stream Proxy ────────────────────────────────────────────
+
+/**
+ * @openapi
+ * /api/youtube/stream/{videoId}:
+ *   get:
+ *     summary: Stream audio from a YouTube video
+ *     tags: [YouTube]
+ *     parameters:
+ *       - in: path
+ *         name: videoId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: quality
+ *         schema:
+ *           type: string
+ *           enum: [LOW, MEDIUM, HIGH, LOSSLESS]
+ *     responses:
+ *       200:
+ *         description: Audio stream
+ *       206:
+ *         description: Partial content (Range request)
+ */
+router.get(
+    "/stream/:videoId",
+    requireAuthOrToken,
+    async (req: Request, res: Response) => {
+        try {
+            const { videoId } = req.params;
+            const quality = (
+                (req.query.quality as string) || "HIGH"
+            ).toUpperCase();
+            const rangeHeader = req.headers.range;
+
+            const proxyRes = await youtubeDownloadService.getStreamProxy(
+                videoId,
+                quality,
+                rangeHeader
+            );
+
+            // Forward status code and relevant headers
+            res.status(proxyRes.status);
+
+            const forwardHeaders = [
+                "content-type",
+                "content-length",
+                "content-range",
+                "accept-ranges",
+            ];
+            for (const header of forwardHeaders) {
+                const value = proxyRes.headers[header];
+                if (value) res.setHeader(header, value);
+            }
+
+            proxyRes.data.on("error", (streamErr: Error) => {
+                logger.warn(
+                    `[YouTube Route] Upstream stream error for ${videoId}: ${streamErr.message}`
+                );
+                if (!res.headersSent) {
+                    res.status(502).json({ error: "Upstream stream failed" });
+                } else {
+                    res.end();
+                }
+            });
+            proxyRes.data.pipe(res);
+        } catch (err: any) {
+            if (err.response?.status === 404) {
+                return res.status(404).json({ error: "Stream not found" });
+            }
+            if (err.response?.status === 451) {
+                return res.status(451).json({
+                    error: "age_restricted",
+                    message:
+                        "This content requires age verification and cannot be streamed.",
+                });
+            }
+            logger.error("[YouTube Route] Stream proxy failed:", err.message);
+            return res.status(500).json({ error: "Failed to stream audio" });
+        }
+    }
+);
+
+// ── Download ──────────────────────────────────────────────────────
+
+const downloadBodySchema = z.object({
+    videoId: z.string().min(1),
+    format: z.enum(["mp3", "opus", "flac", "m4a"]).default("mp3"),
+    quality: z.enum(["LOW", "MEDIUM", "HIGH", "LOSSLESS"]).default("HIGH"),
+});
+
+/**
+ * @openapi
+ * /api/youtube/download:
+ *   post:
+ *     summary: Start a background YouTube audio download job
+ *     tags: [YouTube]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               videoId:
+ *                 type: string
+ *               format:
+ *                 type: string
+ *                 enum: [mp3, opus, flac, m4a]
+ *               quality:
+ *                 type: string
+ *                 enum: [LOW, MEDIUM, HIGH, LOSSLESS]
+ *     responses:
+ *       202:
+ *         description: >
+ *           Download job accepted. The backend watches the job server-side
+ *           and queues a library scan when it completes (or immediately when
+ *           the file already existed on disk); poll
+ *           GET /api/youtube/download/{jobId} for UI progress.
+ *       400:
+ *         description: Invalid request body
+ *       502:
+ *         description: Sidecar unavailable or rejected the download
+ */
+router.post("/download", requireAuth, async (req: Request, res: Response) => {
+    try {
+        const { videoId, format, quality } = downloadBodySchema.parse(req.body);
+        const userId = req.user!.id;
+
+        logger.info(
+            `[YouTube Route] Download requested: ${videoId} (${format}, ${quality})`
+        );
+
+        const job = await youtubeDownloadService.startDownload(
+            videoId,
+            format,
+            quality
+        );
+
+        if (job.status === "completed") {
+            // Idempotency hit — the file is already on disk, but it may
+            // never have been imported (failed scan, out-of-band file), so
+            // always queue a scan.
+            await enqueueLibraryScanForDownloadJob(job.jobId, userId);
+        } else {
+            watchDownloadJobAndQueueScan(job.jobId, userId);
+        }
+
+        return res.status(202).json(job);
+    } catch (err: any) {
+        if (err instanceof z.ZodError) {
+            return res.status(400).json({ error: err.errors[0].message });
+        }
+        if (err.response?.status === 400) {
+            return res.status(400).json({
+                error: err.response?.data?.detail || "Invalid download request",
+            });
+        }
+        logger.error("[YouTube Route] Download start failed:", err.message);
+        return res
+            .status(502)
+            .json({ error: err.response?.data?.detail || "Download failed" });
+    }
+});
+
+// Jobs that have already triggered a library scan, so the server-side
+// watcher and repeated status polls enqueue the scan exactly once per job.
+// In-memory is fine: jobs themselves are in-memory on the sidecar and lost
+// together on restart.
+const scannedDownloadJobIds = new Set<string>();
+
+/**
+ * Queue a library scan for a completed download job exactly once. Removes
+ * the job from the dedupe set again when the enqueue fails so a later
+ * caller (watcher retry or status poll) can try again.
+ */
+async function enqueueLibraryScanForDownloadJob(
+    jobId: string,
+    userId: string
+): Promise<void> {
+    if (scannedDownloadJobIds.has(jobId)) {
+        return;
+    }
+    scannedDownloadJobIds.add(jobId);
+    try {
+        const { scanQueue } = await import("../workers/queues");
+        await scanQueue.add("scan", {
+            userId,
+            source: "youtube-download",
+        });
+        logger.debug(
+            `[YouTube Route] Library scan queued after download job ${jobId}`
+        );
+    } catch (scanErr: any) {
+        // Allow a later watcher tick / status poll to retry the enqueue.
+        scannedDownloadJobIds.delete(jobId);
+        logger.warn(
+            `[YouTube Route] Failed to queue library scan: ${scanErr.message}`
+        );
+    }
+}
+
+/**
+ * Fire-and-forget server-side watch of a download job. Guarantees the
+ * library scan fires on completion even when the browser that started the
+ * download stopped polling (navigation, tab close) — important for
+ * multi-hour downloads.
+ */
+function watchDownloadJobAndQueueScan(jobId: string, userId: string): void {
+    void (async () => {
+        try {
+            const outcome = await watchYouTubeDownloadJobUntilTerminal(
+                jobId,
+                (id) => youtubeDownloadService.getDownloadJobStatus(id)
+            );
+            if (outcome === "completed") {
+                await enqueueLibraryScanForDownloadJob(jobId, userId);
+            }
+        } catch (watchErr: any) {
+            logger.warn(
+                `[YouTube Route] Download job watcher crashed for ${jobId}: ${watchErr.message}`
+            );
+        }
+    })();
+}
+
+/**
+ * @openapi
+ * /api/youtube/download/{jobId}:
+ *   get:
+ *     summary: Get YouTube download job status
+ *     description: >
+ *       Proxies the sidecar's job store for UI progress. The library scan
+ *       is normally queued by the server-side job watcher; as a fallback
+ *       (e.g. after a backend restart mid-download), a poll that observes
+ *       the job as completed also queues the scan (once per job).
+ *     tags: [YouTube]
+ *     parameters:
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Job status (queued, downloading, processing, completed, failed)
+ *       404:
+ *         description: Unknown job id (e.g. sidecar restarted)
+ *       502:
+ *         description: Sidecar unavailable
+ */
+router.get(
+    "/download/:jobId",
+    requireAuth,
+    async (req: Request, res: Response) => {
+        try {
+            const { jobId } = req.params;
+            const job = await youtubeDownloadService.getDownloadJobStatus(
+                jobId
+            );
+
+            if (job.status === "completed") {
+                await enqueueLibraryScanForDownloadJob(
+                    job.jobId,
+                    req.user!.id
+                );
+            }
+
+            return res.json(job);
+        } catch (err: any) {
+            if (err.response?.status === 404) {
+                return res
+                    .status(404)
+                    .json({ error: "Download job not found" });
+            }
+            logger.error(
+                "[YouTube Route] Download status fetch failed:",
+                err.message
+            );
+            return res
+                .status(502)
+                .json({ error: "Failed to fetch download status" });
+        }
+    }
+);
+
+export default router;

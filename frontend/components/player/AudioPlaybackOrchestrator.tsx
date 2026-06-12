@@ -100,9 +100,10 @@ import {
 interface RuntimeProviderTrack {
     mediaSource?: CanonicalMediaSource;
     provider?: CanonicalMediaProviderIdentity;
-    streamSource?: "local" | "tidal" | "youtube";
+    streamSource?: "local" | "tidal" | "youtube" | "youtube-direct";
     tidalTrackId?: number;
     youtubeVideoId?: string;
+    youtubeAudioFormat?: "mp4" | "webm";
 }
 
 function getNextTrackInfo(
@@ -112,9 +113,10 @@ function getNextTrackInfo(
         filePath?: string;
         mediaSource?: CanonicalMediaSource;
         provider?: CanonicalMediaProviderIdentity;
-        streamSource?: "local" | "tidal" | "youtube";
+        streamSource?: "local" | "tidal" | "youtube" | "youtube-direct";
         tidalTrackId?: number;
         youtubeVideoId?: string;
+        youtubeAudioFormat?: "mp4" | "webm";
     }[],
     currentIndex: number,
     isShuffle: boolean,
@@ -126,9 +128,10 @@ function getNextTrackInfo(
     filePath?: string;
     mediaSource?: CanonicalMediaSource;
     provider?: CanonicalMediaProviderIdentity;
-    streamSource?: "local" | "tidal" | "youtube";
+    streamSource?: "local" | "tidal" | "youtube" | "youtube-direct";
     tidalTrackId?: number;
     youtubeVideoId?: string;
+    youtubeAudioFormat?: "mp4" | "webm";
 } | null {
     if (queue.length === 0) return null;
 
@@ -4342,6 +4345,9 @@ export const AudioPlaybackOrchestrator = memo(function AudioPlaybackOrchestrator
                             } else if (nextTrack.streamSource === "youtube" && nextTrack.youtubeVideoId) {
                                 preloadUrl = api.getYtMusicStreamUrl(nextTrack.youtubeVideoId, undefined, !ytMusicAuthenticatedRef.current);
                                 preloadFormat = resolveRemoteStreamFormat("youtube");
+                            } else if (nextTrack.streamSource === "youtube-direct" && nextTrack.youtubeVideoId) {
+                                preloadUrl = api.getYouTubeStreamUrl(nextTrack.youtubeVideoId);
+                                preloadFormat = nextTrack.youtubeAudioFormat === "webm" ? "webm" : "mp4";
                             } else {
                                 preloadUrl = api.getStreamUrl(nextTrack.id);
                                 const ext = (nextTrack.filePath || "").split(".").pop()?.toLowerCase();
@@ -4473,9 +4479,10 @@ export const AudioPlaybackOrchestrator = memo(function AudioPlaybackOrchestrator
             });
 
             // Show a descriptive toast for YouTube-sourced tracks that fail
-            if (playbackType === "track" && currentTrack?.streamSource === "youtube") {
+            if (playbackType === "track" && (currentTrack?.streamSource === "youtube" || currentTrack?.streamSource === "youtube-direct")) {
+                const source = currentTrack.streamSource === "youtube-direct" ? "YouTube" : "YouTube Music";
                 toast.error(
-                    `Couldn't stream "${currentTrack.title}" from YouTube Music — it may be age-restricted or unavailable.`,
+                    `Couldn't stream "${currentTrack.title}" from ${source} — it may be age-restricted or unavailable.`,
                     { duration: 5000 }
                 );
             }
@@ -5268,6 +5275,8 @@ export const AudioPlaybackOrchestrator = memo(function AudioPlaybackOrchestrator
             } else if (currentTrack.streamSource === "youtube" && currentTrack.youtubeVideoId) {
                 // Prefer authenticated endpoint when user has YT Music OAuth, else public
                 streamUrl = api.getYtMusicStreamUrl(currentTrack.youtubeVideoId, undefined, !ytMusicAuthenticatedRef.current);
+            } else if (currentTrack.streamSource === "youtube-direct" && currentTrack.youtubeVideoId) {
+                streamUrl = api.getYouTubeStreamUrl(currentTrack.youtubeVideoId);
             } else {
                 streamUrl = api.getStreamUrl(currentTrack.id);
             }
@@ -5338,7 +5347,12 @@ export const AudioPlaybackOrchestrator = memo(function AudioPlaybackOrchestrator
             setDuration(fallbackDuration);
 
             let format: string | undefined = "mp3";
-            if (currentTrack?.streamSource === "tidal" || currentTrack?.streamSource === "youtube") {
+            if (currentTrack?.streamSource === "youtube-direct") {
+                // Direct YouTube audio is opus-in-webm or AAC-in-mp4
+                // depending on the source video; /api/youtube/info reports
+                // the container as audioFormat.
+                format = currentTrack.youtubeAudioFormat === "webm" ? "webm" : "mp4";
+            } else if (currentTrack?.streamSource === "tidal" || currentTrack?.streamSource === "youtube") {
                 format = resolveRemoteStreamFormat(currentTrack.streamSource);
             } else {
                 const filePath = currentTrack?.filePath || "";
@@ -6114,10 +6128,11 @@ export const AudioPlaybackOrchestrator = memo(function AudioPlaybackOrchestrator
                     // Show a descriptive toast for YouTube-sourced tracks that fail to load
                     if (
                         playbackType === "track" &&
-                        currentTrack?.streamSource === "youtube"
+                        (currentTrack?.streamSource === "youtube" || currentTrack?.streamSource === "youtube-direct")
                     ) {
+                        const source = currentTrack.streamSource === "youtube-direct" ? "YouTube" : "YouTube Music";
                         toast.error(
-                            `Couldn't stream "${currentTrack.title}" from YouTube Music — it may be age-restricted or unavailable.`,
+                            `Couldn't stream "${currentTrack.title}" from ${source} — it may be age-restricted or unavailable.`,
                             { duration: 5000 }
                         );
                     }
@@ -6373,6 +6388,12 @@ export const AudioPlaybackOrchestrator = memo(function AudioPlaybackOrchestrator
         ) {
             streamUrl = api.getYtMusicStreamUrl(nextTrack.youtubeVideoId, undefined, !ytMusicAuthenticatedRef.current);
             format = resolveRemoteStreamFormat("youtube");
+        } else if (
+            nextTrack.streamSource === "youtube-direct" &&
+            nextTrack.youtubeVideoId
+        ) {
+            streamUrl = api.getYouTubeStreamUrl(nextTrack.youtubeVideoId);
+            format = nextTrack.youtubeAudioFormat === "webm" ? "webm" : "mp4";
         } else {
             streamUrl = api.getStreamUrl(nextTrack.id);
             // Determine format from file path

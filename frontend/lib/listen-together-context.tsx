@@ -167,6 +167,8 @@ function toLocalTrack(
             effectiveSource === "tidal"
                 ? undefined
                 : effectiveYoutubeVideoId,
+        youtubeAudioFormat:
+            item.provider?.youtubeAudioFormat ?? item.youtubeAudioFormat,
         streamSource:
             effectiveSource === "local"
                 ? undefined
