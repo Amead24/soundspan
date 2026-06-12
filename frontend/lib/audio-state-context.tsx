@@ -40,7 +40,11 @@ import {
     resolveServerPlaybackPollDecision,
     type PlaybackSnapshotType,
 } from "@/lib/playback-state-reconciliation";
-import { normalizeQueueItems, type QueueItem } from "@/lib/queue-item";
+import {
+    isEpisodeQueueItem,
+    normalizeQueueItems,
+    type QueueItem,
+} from "@/lib/queue-item";
 import { frontendLogger as sharedFrontendLogger } from "@/lib/logger";
 
 function queueDebugEnabled(): boolean {
@@ -447,7 +451,10 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
                         serverState.trackId,
                         serverQueue
                     );
-                    if (remoteQueueTrack) {
+                    // Mixed-media queues can hold podcast episodes whose
+                    // composite ids never describe a current *track*; only
+                    // track-shaped queue items may be materialized here.
+                    if (remoteQueueTrack && !isEpisodeQueueItem(remoteQueueTrack)) {
                         // Remote (yt:/tidal:/youtube-direct) tracks are not
                         // in the library — materialize the current track from
                         // the persisted queue snapshot instead of the library
@@ -800,7 +807,13 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
                                 serverState.trackId,
                                 serverQueue
                             );
-                        if (remoteQueueTrack) {
+                        // Mixed-media queues can hold podcast episodes whose
+                        // composite ids never describe a current *track*;
+                        // only track-shaped queue items are restorable here.
+                        if (
+                            remoteQueueTrack &&
+                            !isEpisodeQueueItem(remoteQueueTrack)
+                        ) {
                             // Remote (yt:/tidal:/youtube-direct) tracks are
                             // not in the library — materialize from the
                             // persisted queue snapshot instead of the library
