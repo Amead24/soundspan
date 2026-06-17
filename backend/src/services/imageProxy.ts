@@ -1,8 +1,9 @@
 import crypto from "crypto";
 import { BRAND_USER_AGENT } from "../config/brand";
 import {
-    normalizeSafeOutboundRedirectTarget,
     normalizeSafeOutboundUrl,
+    resolveSafeOutboundUrl,
+    resolveSafeOutboundRedirectTarget,
 } from "./outboundUrlSafety";
 
 /**
@@ -53,7 +54,7 @@ async function fetchWithSafeRedirects(options: {
         }
 
         const redirectedUrl = new URL(location, currentUrl).toString();
-        const normalizedRedirect = normalizeSafeOutboundRedirectTarget(
+        const normalizedRedirect = await resolveSafeOutboundRedirectTarget(
             location,
             currentUrl
         );
@@ -92,7 +93,9 @@ export async function fetchExternalImage(options: {
         maxRedirects = 3,
         maxRetries = 3,
     } = options;
-    const safeUrl = normalizeExternalImageUrl(url);
+    // Resolve-and-validate at the fetch entry point (the sync
+    // normalizeExternalImageUrl pre-check used by callers is string-only).
+    const safeUrl = await resolveSafeOutboundUrl(url);
 
     if (!safeUrl) {
         return {
