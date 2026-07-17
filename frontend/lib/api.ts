@@ -3059,14 +3059,17 @@ class ApiClient {
         }>("/vibe/weights");
     }
 
-    /** Pass null to reset to defaults. */
+    /** Pass null to reset to defaults. The reset goes over the wire as a
+     * body-LESS PUT: Express 5's strict JSON parser rejects a literal "null"
+     * body outright (500 before the handler runs), while an absent body
+     * reaches the handler as undefined — its documented reset branch. */
     async saveSimilarityWeights(weights: Record<string, number> | null) {
         return this.request<{
             weights: Record<string, number>;
             isDefault: boolean;
         }>("/vibe/weights", {
             method: "PUT",
-            body: JSON.stringify(weights),
+            ...(weights === null ? {} : { body: JSON.stringify(weights) }),
         });
     }
 

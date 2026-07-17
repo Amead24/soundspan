@@ -458,6 +458,36 @@ test("NowPlayingCard disables fly-to when the track isn't on the map", async () 
     assert.doesNotMatch(html, /Find on map/);
 });
 
+test("NowPlayingCard shows skip-next only when a next queue item exists", async () => {
+    const NowPlayingCard = await nowPlayingCard();
+    const track = {
+        id: "t1",
+        title: "Playing Title",
+        artist: { name: "Playing Artist" },
+        album: { coverArt: null },
+    };
+    const base = {
+        track,
+        isPlaying: true,
+        onMapPresent: false,
+        moodColor: null,
+        onFlyTo: noop,
+        onTogglePlay: noop,
+    };
+
+    // Wired (the connected wrapper passes next() while a next item exists).
+    const withSkip = renderToStaticMarkup(
+        React.createElement(NowPlayingCard, { ...base, onSkipNext: noop })
+    );
+    assert.match(withSkip, /aria-label="Skip to next in queue"/);
+
+    // Queue end: the wrapper passes undefined — no dead skip button.
+    const withoutSkip = renderToStaticMarkup(
+        React.createElement(NowPlayingCard, base)
+    );
+    assert.doesNotMatch(withoutSkip, /aria-label="Skip to next in queue"/);
+});
+
 test("NowPlayingCard renders nothing when there is no track", async () => {
     const NowPlayingCard = await nowPlayingCard();
     const html = renderToStaticMarkup(
@@ -1372,4 +1402,28 @@ test("QueuePanel shows the empty state when nothing is queued", async () => {
         })
     );
     assert.match(html, /Nothing queued — sweep some dots or play a journey\./);
+    // No onClear / onPlayIndex passed: no clear button, rows stay plain text.
+    assert.doesNotMatch(html, /aria-label="Clear queue"/);
+    assert.doesNotMatch(html, /aria-label="Play .* now"/);
+});
+
+test("QueuePanel renders the clear affordance and jump rows when their primitives are wired", async () => {
+    const { QueuePanel } = await queuePanel();
+    const html = renderToStaticMarkup(
+        React.createElement(QueuePanel, {
+            queue: [
+                queueTrack("t1", "Current Song", "Current Artist"),
+                queueTrack("t2", "Next Song", "Next Artist"),
+            ],
+            currentIndex: 0,
+            onClose: noop,
+            onReorder: noop,
+            onPlayIndex: noop,
+            onClear: noop,
+        })
+    );
+    assert.match(html, /aria-label="Clear queue"/);
+    assert.match(html, /aria-label="Play Next Song now"/);
+    // Click-through behavior (absolute index math, onClear, empty-disable)
+    // lives in queuePanelActions.component.test.ts (happy-dom mounts).
 });

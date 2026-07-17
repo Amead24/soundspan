@@ -28,3 +28,18 @@ export function parseEmbedding(text: string): number[] {
 
     return numbers;
 }
+
+/**
+ * Serialize an embedding for interpolation into a `${...}::vector` SQL
+ * parameter as pgvector's text form "[0.1,0.2,...]".
+ *
+ * NEVER pass a raw number[] into those interpolations: under the Prisma 7
+ * pg driver adapter a JS array is bound as a Postgres ARRAY text literal
+ * ("{\"0.1\",...}"), which `::vector` rejects with 22P02 "invalid input
+ * syntax for type vector". (The old Rust engine bound it as a typed float8[]
+ * that pgvector could cast, which is how the raw-array form ever worked —
+ * the adapter migration silently broke every such site.)
+ */
+export function toVectorLiteral(embedding: number[]): string {
+    return `[${embedding.join(",")}]`;
+}

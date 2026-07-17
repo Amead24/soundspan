@@ -66,6 +66,7 @@ jest.mock("../../services/umapProjection", () => ({
 }));
 
 jest.mock("../../utils/embedding", () => ({
+    toVectorLiteral: jest.fn((embedding: number[]) => `[${embedding.join(",")}]`),
     parseEmbedding: jest.fn((text: string) => {
         const values = text.replace(/[\[\]]/g, "").split(",").map(Number);
         return values;
@@ -464,6 +465,18 @@ describe("vibe search transport compatibility", () => {
                 ],
             })
         );
+        // Transport pin: the search embedding binds as a pgvector TEXT
+        // literal, never a raw number[] (Prisma 7 pg adapter binds JS arrays
+        // as Postgres ARRAY literals → 22P02 on a real database).
+        const searchSql = mockRunAnnQuery.mock.calls[0][0] as {
+            values: unknown[];
+        };
+        expect(searchSql.values).toContain("[0.25,0.75]");
+        expect(
+            searchSql.values.some(
+                (v) => Array.isArray(v) && typeof (v as unknown[])[0] === "number"
+            )
+        ).toBe(false);
         expect(mockRedisXAdd).toHaveBeenCalledWith(
             "audio:text:embed:requests",
             "*",

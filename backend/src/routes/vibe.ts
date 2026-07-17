@@ -5,7 +5,7 @@ import { logger } from "../utils/logger";
 import { prisma } from "../utils/db";
 import { runAnnQuery } from "../utils/annQuery";
 import { redisClient } from "../utils/redis";
-import { parseEmbedding } from "../utils/embedding";
+import { parseEmbedding, toVectorLiteral } from "../utils/embedding";
 import { requireAuth } from "../middleware/auth";
 import { findSimilarTracks } from "../services/hybridSimilarity";
 import {
@@ -225,11 +225,13 @@ async function findNearestToEmbedding(
     limit: number,
     excludeIds: string[] = []
 ): Promise<NearestTrackRow[]> {
+    // pgvector text literal — never bind the raw number[] (see toVectorLiteral)
+    const vector = toVectorLiteral(embedding);
     if (excludeIds.length > 0) {
         return runAnnQuery<NearestTrackRow[]>(Prisma.sql`
             SELECT
                 t.id, t.title,
-                te.embedding <=> ${embedding}::vector AS distance,
+                te.embedding <=> ${vector}::vector AS distance,
                 a.id AS "albumId", a.title AS "albumTitle", a."coverUrl" AS "albumCoverUrl",
                 ar.id AS "artistId", ar.name AS "artistName",
                 t.energy, t.valence, t.danceability, t.arousal
@@ -238,14 +240,14 @@ async function findNearestToEmbedding(
             JOIN "Album" a ON t."albumId" = a.id
             JOIN "Artist" ar ON a."artistId" = ar.id
             WHERE te.track_id != ALL(${excludeIds}::text[])
-            ORDER BY te.embedding <=> ${embedding}::vector
+            ORDER BY te.embedding <=> ${vector}::vector
             LIMIT ${limit}
         `);
     }
     return runAnnQuery<NearestTrackRow[]>(Prisma.sql`
         SELECT
             t.id, t.title,
-            te.embedding <=> ${embedding}::vector AS distance,
+            te.embedding <=> ${vector}::vector AS distance,
             a.id AS "albumId", a.title AS "albumTitle", a."coverUrl" AS "albumCoverUrl",
             ar.id AS "artistId", ar.name AS "artistName",
             t.energy, t.valence, t.danceability, t.arousal
@@ -253,7 +255,7 @@ async function findNearestToEmbedding(
         JOIN "Track" t ON te.track_id = t.id
         JOIN "Album" a ON t."albumId" = a.id
         JOIN "Artist" ar ON a."artistId" = ar.id
-        ORDER BY te.embedding <=> ${embedding}::vector
+        ORDER BY te.embedding <=> ${vector}::vector
         LIMIT ${limit}
     `);
 }
@@ -970,8 +972,9 @@ router.get<{ trackId: string }>("/mixer/:trackId", requireAuth, async (req, res)
         // shape can't hit. Scanning every embedding and aligning through the
         // id maps below yields an identical response — rows for tracks
         // outside the projection simply never get read.
+        const seedVector = toVectorLiteral(seedEmbedding);
         const clapRows = await prisma.$queryRaw<{ track_id: string; sim: number }[]>`
-            SELECT track_id, 1 - (embedding <=> ${seedEmbedding}::vector) as sim
+            SELECT track_id, 1 - (embedding <=> ${seedVector}::vector) as sim
             FROM track_embeddings
         `;
 
@@ -990,9 +993,11 @@ router.get<{ trackId: string }>("/mixer/:trackId", requireAuth, async (req, res)
 
         let lyricRows: { track_id: string; sim: number }[] = [];
         if (seedLyric.length > 0) {
-            const seedLyricEmbedding = parseEmbedding(seedLyric[0].embedding);
+            const seedLyricVector = toVectorLiteral(
+                parseEmbedding(seedLyric[0].embedding)
+            );
             lyricRows = await prisma.$queryRaw<{ track_id: string; sim: number }[]>`
-                SELECT tle.track_id, 1 - (tle.embedding <=> ${seedLyricEmbedding}::vector) as sim
+                SELECT tle.track_id, 1 - (tle.embedding <=> ${seedLyricVector}::vector) as sim
                 FROM track_lyric_embeddings tle
                 JOIN "TrackLyrics" tl ON tl."trackId" = tle.track_id
                 WHERE tl."analysisStatus" = 'completed'
@@ -1353,8 +1358,19 @@ router.put("/weights", requireAuth, async (req, res) => {
     try {
         const userId = req.user!.id;
 
-        // null body = reset to defaults (clears the stored mix)
-        if (req.body === null || req.body === undefined) {
+        // Empty body = reset to defaults (clears the stored mix). All three
+        // transport shapes an "empty" PUT can arrive as must hit this branch:
+        // no body at all (undefined), a literal null from a direct caller,
+        // and {} — what Express 5's json parser yields for a zero-length
+        // body with a JSON content type, the shape the frontend's
+        // saveSimilarityWeights(null) actually sends (a literal "null" body
+        // is rejected by the strict parser before any handler runs).
+        const isEmptyObjectBody =
+            typeof req.body === "object" &&
+            req.body !== null &&
+            !Array.isArray(req.body) &&
+            Object.keys(req.body).length === 0;
+        if (req.body === null || req.body === undefined || isEmptyObjectBody) {
             await prisma.user.update({
                 where: { id: userId },
                 data: { similarityWeights: Prisma.DbNull },
@@ -1647,13 +1663,14 @@ router.post("/search", requireAuth, async (req, res) => {
             // Query for similar tracks using the (possibly expanded) embedding
             // Fetch more candidates for re-ranking (3x limit)
             // Filter by max distance to exclude poor matches
+            const searchVector = toVectorLiteral(searchEmbedding);
             const similarTracks = await runAnnQuery<TextSearchResult[]>(Prisma.sql`
                 SELECT
                     t.id,
                     t.title,
                     t.duration,
                     t."trackNo",
-                    te.embedding <=> ${searchEmbedding}::vector AS distance,
+                    te.embedding <=> ${searchVector}::vector AS distance,
                     a.id as "albumId",
                     a.title as "albumTitle",
                     a."coverUrl" as "albumCoverUrl",
@@ -1670,8 +1687,8 @@ router.post("/search", requireAuth, async (req, res) => {
                 JOIN "Track" t ON te.track_id = t.id
                 JOIN "Album" a ON t."albumId" = a.id
                 JOIN "Artist" ar ON a."artistId" = ar.id
-                WHERE te.embedding <=> ${searchEmbedding}::vector <= ${maxDistance}
-                ORDER BY te.embedding <=> ${searchEmbedding}::vector
+                WHERE te.embedding <=> ${searchVector}::vector <= ${maxDistance}
+                ORDER BY te.embedding <=> ${searchVector}::vector
                 LIMIT ${limit * 3}
             `);
 

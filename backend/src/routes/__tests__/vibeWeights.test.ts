@@ -1,6 +1,10 @@
-import { Request, Response } from "express";
+import express, { Request, Response } from "express";
+import request from "supertest";
 
 jest.mock("crypto", () => ({
+    // Spread the real module: the supertest transport tests below exercise a
+    // real express app, whose etag generation needs crypto.createHash.
+    ...jest.requireActual("crypto"),
     randomUUID: jest.fn(() => "req-123"),
 }));
 
@@ -62,6 +66,7 @@ jest.mock("../../services/umapProjection", () => ({
 }));
 
 jest.mock("../../utils/embedding", () => ({
+    toVectorLiteral: jest.fn((embedding: number[]) => `[${embedding.join(",")}]`),
     parseEmbedding: jest.fn(),
 }));
 
@@ -211,6 +216,45 @@ describe("similarity weights routes", () => {
         expect(res.body).toEqual({
             weights: DEFAULT_SIMILARITY_WEIGHTS,
             isDefault: true,
+        });
+    });
+
+    // Transport-level pins: the handler-only tests above bypass body parsing,
+    // which hid a real outage — Express 5's strict JSON parser rejects a
+    // literal "null" body with a 500 BEFORE the handler runs, so "PUT null
+    // resets" never worked over real HTTP (found live: the mixer's reset
+    // button 500ed on every click while this suite stayed green). The reset
+    // must travel as a body-LESS PUT — the shape lib/api.ts's
+    // saveSimilarityWeights(null) now sends.
+    describe("PUT /weights through the real JSON body parser", () => {
+        function buildApp() {
+            const app = express();
+            app.use(express.json());
+            app.use("/api/vibe", router);
+            return app;
+        }
+
+        it("a body-less PUT resets to defaults", async () => {
+            const res = await request(buildApp())
+                .put("/api/vibe/weights")
+                .set("Content-Type", "application/json");
+
+            expect(res.status).toBe(200);
+            expect(res.body).toEqual({
+                weights: DEFAULT_SIMILARITY_WEIGHTS,
+                isDefault: true,
+            });
+            expect(mockUserUpdate).toHaveBeenCalledTimes(1);
+        });
+
+        it("a JSON mix still saves through the parser", async () => {
+            const weights = customWeights();
+            const res = await request(buildApp())
+                .put("/api/vibe/weights")
+                .send(weights);
+
+            expect(res.status).toBe(200);
+            expect(res.body.weights).toEqual(weights);
         });
     });
 

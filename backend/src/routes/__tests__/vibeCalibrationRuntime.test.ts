@@ -64,6 +64,7 @@ jest.mock("../../services/umapProjection", () => ({
 }));
 
 jest.mock("../../utils/embedding", () => ({
+    toVectorLiteral: jest.fn((embedding: number[]) => `[${embedding.join(",")}]`),
     parseEmbedding: jest.fn((text: string) => {
         const values = text.replace(/[\[\]]/g, "").split(",").map(Number);
         return values;

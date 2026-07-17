@@ -62,6 +62,7 @@ jest.mock("../../services/umapProjection", () => ({
 }));
 
 jest.mock("../../utils/embedding", () => ({
+    toVectorLiteral: jest.fn((embedding: number[]) => `[${embedding.join(",")}]`),
     parseEmbedding: jest.fn((text: string) => {
         const values = text.replace(/[\[\]]/g, "").split(",").map(Number);
         return values;
@@ -237,6 +238,20 @@ describe("vibe journey + moods runtime", () => {
             expect(res.body.target).toEqual({ trackId: "dest-1", title: "Destination Song" });
             expect(res.body.waypoints).toHaveLength(3);
             expect(res.body.waypoints[res.body.waypoints.length - 1].id).toBe("dest-1");
+
+            // Transport pin: the interpolated embedding must be a pgvector
+            // TEXT literal ("[...]"), never a raw number[] — the Prisma 7 pg
+            // adapter binds JS arrays as Postgres ARRAY literals, which
+            // `::vector` rejects with 22P02 on a real database.
+            for (const call of mockRunAnnQuery.mock.calls) {
+                const sqlValues = (call[0] as { values: unknown[] }).values;
+                expect(sqlValues.some((v) => Array.isArray(v) && typeof v[0] === "number")).toBe(false);
+                expect(
+                    sqlValues.some(
+                        (v) => typeof v === "string" && /^\[[-\d.,eE]+\]$/.test(v)
+                    )
+                ).toBe(true);
+            }
         });
 
         it("track mode: every waypoint (intermediate and destination) carries nullable audioFeatures", async () => {

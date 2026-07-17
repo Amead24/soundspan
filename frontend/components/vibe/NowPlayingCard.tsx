@@ -20,7 +20,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Crosshair, Music, Pause, Play } from "lucide-react";
+import { Crosshair, Music, Pause, Play, SkipForward } from "lucide-react";
 import { VIBE_ACCENTS } from "./types";
 
 export interface NowPlayingCardTrack {
@@ -42,6 +42,9 @@ export interface NowPlayingCardProps {
     onFlyTo: () => void;
     /** Toggle play/pause using the real audio controls. */
     onTogglePlay: () => void;
+    /** Skip to the next queue item (`next()` verbatim). Omit when there is
+     *  nothing to skip to — the button renders only when provided. */
+    onSkipNext?: () => void;
     /** Elapsed playback seconds — pairs with `duration` to draw the tiny
      *  progress strip along the card's bottom edge. Purely indicative (no
      *  seek interaction — a 2px hit target over a pan surface would misfire;
@@ -66,6 +69,7 @@ export function NowPlayingCard({
     moodColor,
     onFlyTo,
     onTogglePlay,
+    onSkipNext,
     currentTime,
     duration,
     likeSlot,
@@ -213,6 +217,21 @@ export function NowPlayingCard({
                     <Play className="w-5 h-5" />
                 )}
             </button>
+
+            {/* Skip-next, only when a next queue item exists (the connected
+                wrapper passes undefined at queue end). Same rationale as
+                play/pause: in fullscreen this card is the only transport. */}
+            {onSkipNext && (
+                <button
+                    type="button"
+                    onClick={onSkipNext}
+                    aria-label="Skip to next in queue"
+                    title="Skip to next in queue"
+                    className="flex flex-shrink-0 items-center justify-center w-10 h-10 rounded-lg text-gray-200 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 transition-colors"
+                >
+                    <SkipForward className="w-5 h-5" />
+                </button>
+            )}
 
             {/* Tiny playback-progress strip along the bottom edge, inset from
                 the rounded corners. Purely indicative — no seek interaction;

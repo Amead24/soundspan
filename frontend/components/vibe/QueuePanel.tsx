@@ -24,10 +24,16 @@
  * renders a calibrated similarity percent (it requires a `distance` prop),
  * which has no meaning for a queue position — forcing a fake distance would
  * paint a bogus match percentage on every row.
+ *
+ * Same do-not-reimplement rule for the other actions: `onPlayIndex` is meant
+ * to be `playQueueIndex` verbatim (clicking a row jumps playback there, like
+ * /queue) and `onClear` is `clearQueue` verbatim (Listen-Together-aware; it
+ * also stops current playback — identical semantics to /queue's Clear Queue
+ * button, on purpose).
  */
 
 import { useRef, useState } from "react";
-import { GripVertical, Music, X } from "lucide-react";
+import { GripVertical, Music, Trash2, X } from "lucide-react";
 import {
     resolveDropPosition,
     resolveDropTargetIndex,
@@ -47,6 +53,12 @@ export interface QueuePanelProps {
     onReorder: (fromIndex: number, toIndex: number) => void;
     /** removeFromQueue, reused verbatim. Omit to render no remove affordance. */
     onRemove?: (index: number) => void;
+    /** playQueueIndex, reused verbatim — clicking a row jumps playback to it.
+     *  Omit to render rows as plain (non-clickable) text. */
+    onPlayIndex?: (index: number) => void;
+    /** clearQueue, reused verbatim (stops playback too, matching /queue's
+     *  Clear Queue). Omit to render no clear affordance. */
+    onClear?: () => void;
     /** True during a Listen Together session: the shared queue is
      *  server-owned, so a local reorder would desync — mirrors /queue by
      *  hiding the drag handle entirely rather than offering a drag that
@@ -92,6 +104,8 @@ export function QueuePanel({
     onClose,
     onReorder,
     onRemove,
+    onPlayIndex,
+    onClear,
     reorderDisabled,
 }: QueuePanelProps) {
     const current = queue[currentIndex] ?? null;
@@ -113,6 +127,20 @@ export function QueuePanel({
     return (
         <VibePanel
             title="Queue"
+            headerExtra={
+                onClear ? (
+                    <button
+                        type="button"
+                        onClick={onClear}
+                        disabled={queue.length === 0}
+                        aria-label="Clear queue"
+                        title="Clear queue (stops playback)"
+                        className="ml-auto inline-flex items-center justify-center w-10 h-10 rounded-lg text-gray-400 hover:text-red-400 hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-30 disabled:hover:text-gray-400 disabled:hover:bg-transparent"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                    </button>
+                ) : undefined
+            }
             onClose={onClose}
             closeLabel="Close queue"
             closeTitle="Close queue (Esc)"
@@ -235,14 +263,33 @@ export function QueuePanel({
                                             <GripVertical className="w-4 h-4" />
                                         </button>
                                     )}
-                                    <span className="flex-1 min-w-0">
-                                        <span className="block truncate text-[13px] text-white">
-                                            {title}
+                                    {onPlayIndex ? (
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                onPlayIndex(absoluteIndex)
+                                            }
+                                            title="Jump to this song"
+                                            aria-label={`Play ${title} now`}
+                                            className="flex-1 min-w-0 text-left rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+                                        >
+                                            <span className="block truncate text-[13px] text-white">
+                                                {title}
+                                            </span>
+                                            <span className="block truncate text-xs text-gray-400">
+                                                {queueItemSubtitle(item)}
+                                            </span>
+                                        </button>
+                                    ) : (
+                                        <span className="flex-1 min-w-0">
+                                            <span className="block truncate text-[13px] text-white">
+                                                {title}
+                                            </span>
+                                            <span className="block truncate text-xs text-gray-400">
+                                                {queueItemSubtitle(item)}
+                                            </span>
                                         </span>
-                                        <span className="block truncate text-xs text-gray-400">
-                                            {queueItemSubtitle(item)}
-                                        </span>
-                                    </span>
+                                    )}
                                     {onRemove && (
                                         <button
                                             type="button"

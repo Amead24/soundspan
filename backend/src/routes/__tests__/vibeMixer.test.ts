@@ -56,6 +56,7 @@ jest.mock("../../services/umapProjection", () => ({
 }));
 
 jest.mock("../../utils/embedding", () => ({
+    toVectorLiteral: jest.fn((embedding: number[]) => `[${embedding.join(",")}]`),
     parseEmbedding: jest.fn((text: string) => JSON.parse(text) as number[]),
 }));
 
@@ -175,6 +176,21 @@ describe("GET /api/vibe/mixer/:trackId", () => {
             clapSim: [0.5, 0.9123, null],
             lyricSim: [null, 0.25, null],
         });
+
+        // Transport pin: the embedding params bound into `::vector` casts
+        // must be pgvector TEXT literals ("[1,0]"), never raw number[] — the
+        // Prisma 7 pg adapter binds a JS array as a Postgres ARRAY literal
+        // ('{"1","0"}') and the query 22P02s against a real database (found
+        // live: every mixer request 500ed while this suite stayed green).
+        const clapScanParams = mockQueryRaw.mock.calls[1].slice(1);
+        const lyricScanParams = mockQueryRaw.mock.calls[3].slice(1);
+        expect(clapScanParams).toContain("[1,0]");
+        expect(lyricScanParams).toContain("[0,1]");
+        for (const call of mockQueryRaw.mock.calls) {
+            for (const param of call.slice(1)) {
+                expect(Array.isArray(param)).toBe(false);
+            }
+        }
     });
 
     it("null-fills the whole lyricSim array when the seed has no usable lyrics", async () => {

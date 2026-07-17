@@ -219,14 +219,20 @@ function NowPlayingConnected({
     onFlyTo: () => void;
 }) {
     const { isPlaying, currentTime, duration } = useAudioPlayback();
-    const { pause, play } = useAudioControls();
-    const { playbackType } = useAudioState();
+    const { pause, play, next } = useAudioControls();
+    const { playbackType, queue, currentIndex } = useAudioState();
     const onTogglePlay = useCallback(
         () => (isPlaying ? pause() : play()),
         [isPlaying, pause, play]
     );
     const preferenceTrackId =
         playbackType === "track" ? track?.id : undefined;
+    // Skip renders only when a next queue item actually exists — `next()` is
+    // the player bar's primitive, reused verbatim.
+    const hasNext =
+        typeof currentIndex === "number" &&
+        currentIndex >= 0 &&
+        currentIndex < (queue?.length ?? 0) - 1;
     return (
         <NowPlayingCard
             track={track}
@@ -235,6 +241,7 @@ function NowPlayingConnected({
             moodColor={moodColor}
             onFlyTo={onFlyTo}
             onTogglePlay={onTogglePlay}
+            onSkipNext={hasNext ? next : undefined}
             currentTime={currentTime}
             duration={duration}
             likeSlot={
@@ -323,8 +330,15 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
     // currentIndex change on enqueue/advance only, which is exactly when the
     // flight plan must re-derive.
     const { currentTrack, queue, currentIndex } = useAudioState();
-    const { playTrack, playTracks, addToQueue, moveQueueItem, removeFromQueue } =
-        useAudioControls();
+    const {
+        playTrack,
+        playTracks,
+        addToQueue,
+        moveQueueItem,
+        removeFromQueue,
+        playQueueIndex,
+        clearQueue,
+    } = useAudioControls();
     const { isInGroup } = useListenTogether();
     const filters = useMapFilters(tracks);
     const { trailIds, entries: trailEntries, clear: clearTrail } = useSessionTrail();
@@ -1679,6 +1693,17 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
                     onClose={() => setAuxSurface(null)}
                     onReorder={moveQueueItem}
                     onRemove={removeFromQueue}
+                    onPlayIndex={playQueueIndex}
+                    onClear={() => {
+                        clearQueue();
+                        // Same toast /queue's Clear Queue shows — one shared
+                        // primitive, one shared message.
+                        toast.success(
+                            isInGroup
+                                ? "Listen Together queue cleared"
+                                : "Queue cleared"
+                        );
+                    }}
                     reorderDisabled={isInGroup}
                 />
             )}

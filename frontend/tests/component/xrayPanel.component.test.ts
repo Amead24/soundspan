@@ -193,6 +193,24 @@ test("picking A and B fetches the comparison and renders the breakdown", async (
     );
     // Lyric block numbers
     assert.ok(text.includes("Themes match"), "semantic line");
+
+    // Gap bars: distant values (energy 0.3 vs 0.8) keep two separate A/B
+    // markers plus the connecting gap span; coinciding values (danceability
+    // 0.5 vs 0.5) fuse into one dual-color "both tracks are here" marker —
+    // two stacked identical dots read as ONE lonely dot, which made a
+    // dots-left + "100%" row look like a broken progress bar (user report).
+    assert.ok(
+        mounted.container.querySelector('[title="A: 0.30"]'),
+        "separate A marker for distant values"
+    );
+    assert.ok(
+        mounted.container.querySelector('[title="B: 0.80"]'),
+        "separate B marker for distant values"
+    );
+    assert.ok(
+        mounted.container.querySelector('[title="A & B: 0.50 · 0.50"]'),
+        "coinciding values fuse into one dual-color marker"
+    );
     await mounted.unmount();
 });
 

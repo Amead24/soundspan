@@ -93,21 +93,59 @@ function TrackPicker({
     );
 }
 
-/** Dual-marker gap bar: A and B positions on a 0..1 axis, plain divs. */
+/** Two coinciding dots are indistinguishable from one lonely dot, and a lone
+ *  dot at 0 next to "100%" reads as a broken progress bar — the bar
+ *  communicated worst exactly when the match was best (real user report). */
+const GAP_MARKER_OVERLAP = 0.03;
+
+/**
+ * Dual-marker gap bar: A and B positions on a 0..1 axis, plain divs. The
+ * highlighted span between the markers IS the gap the row's percentage
+ * scores (wide span = disagreement, no span = perfect match); markers that
+ * would visually overlap fuse into one half-indigo/half-amber dot so "both
+ * tracks are here" stays legible.
+ */
 function GapBar({ a, b }: { a: number | null; b: number | null }) {
     if (a == null || b == null) {
         return <span className="text-[11px] text-gray-500">no data</span>;
     }
+    const posA = Math.min(1, Math.max(0, a));
+    const posB = Math.min(1, Math.max(0, b));
+    if (Math.abs(posA - posB) < GAP_MARKER_OVERLAP) {
+        return (
+            <div className="relative h-1.5 rounded-full bg-white/10">
+                <span
+                    className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full"
+                    style={{
+                        left: `calc(${((posA + posB) / 2) * 100}% - 4px)`,
+                        // indigo-300 | amber-300 — the A/B legend colors
+                        background:
+                            "linear-gradient(90deg, #a5b4fc 50%, #fcd34d 50%)",
+                    }}
+                    title={`A & B: ${a.toFixed(2)} · ${b.toFixed(2)}`}
+                />
+            </div>
+        );
+    }
+    const lo = Math.min(posA, posB);
+    const hi = Math.max(posA, posB);
     return (
         <div className="relative h-1.5 rounded-full bg-white/10">
             <span
+                className="absolute inset-y-0 rounded-full bg-white/20"
+                style={{
+                    left: `${lo * 100}%`,
+                    width: `${(hi - lo) * 100}%`,
+                }}
+            />
+            <span
                 className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-indigo-300"
-                style={{ left: `calc(${Math.min(1, Math.max(0, a)) * 100}% - 4px)` }}
+                style={{ left: `calc(${posA * 100}% - 4px)` }}
                 title={`A: ${a.toFixed(2)}`}
             />
             <span
                 className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-amber-300"
-                style={{ left: `calc(${Math.min(1, Math.max(0, b)) * 100}% - 4px)` }}
+                style={{ left: `calc(${posB * 100}% - 4px)` }}
                 title={`B: ${b.toFixed(2)}`}
             />
         </div>
