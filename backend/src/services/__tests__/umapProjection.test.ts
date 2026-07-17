@@ -1,13 +1,5 @@
 import { jest } from "@jest/globals";
 
-type MockPipeline = {
-    setEx: jest.Mock;
-    del: jest.Mock;
-    sAdd: jest.Mock;
-    expire: jest.Mock;
-    exec: jest.Mock;
-};
-
 type QueryRow = {
     track_id: string;
     title: string;
@@ -40,7 +32,7 @@ type QueryRow = {
 
 const mockQueryRaw = jest.fn<(...args: unknown[]) => Promise<QueryRow[]>>();
 const mockRedisGet = jest.fn<(...args: unknown[]) => Promise<string | null>>();
-const mockRedisMulti = jest.fn<(...args: unknown[]) => MockPipeline>();
+const mockRedisSetEx = jest.fn<(...args: unknown[]) => Promise<string>>();
 const mockExistsSync = jest.fn<(candidatePath: string) => boolean>();
 const mockPathJoin = jest.fn<(...parts: string[]) => string>();
 const mockParseEmbedding = jest.fn<(embedding: string) => number[]>();
@@ -49,7 +41,6 @@ const mockUmapLoggerInfo = jest.fn<(...args: unknown[]) => void>();
 const mockUmapLoggerWarn = jest.fn<(...args: unknown[]) => void>();
 const mockUmapLoggerError = jest.fn<(...args: unknown[]) => void>();
 
-let pipeline: MockPipeline;
 let workerBehavior: ((worker: MockWorker) => void) | null = null;
 let workers: MockWorker[] = [];
 let lastWorkerFilename: string | null = null;
@@ -103,7 +94,7 @@ jest.mock("../../utils/db", () => ({
 jest.mock("../../utils/redis", () => ({
     redisClient: {
         get: (...args: unknown[]) => mockRedisGet(...args),
-        multi: (...args: unknown[]) => mockRedisMulti(...args),
+        setEx: (...args: unknown[]) => mockRedisSetEx(...args),
     },
 }));
 
@@ -182,16 +173,8 @@ describe("computeMapProjection", () => {
         lastWorkerFilename = null;
         lastWorkerOptions = null;
 
-        pipeline = {
-            setEx: jest.fn<(...args: unknown[]) => MockPipeline>(() => pipeline),
-            del: jest.fn<(...args: unknown[]) => MockPipeline>(() => pipeline),
-            sAdd: jest.fn<(...args: unknown[]) => MockPipeline>(() => pipeline),
-            expire: jest.fn<(...args: unknown[]) => MockPipeline>(() => pipeline),
-            exec: jest.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
-        };
-
         mockRedisGet.mockResolvedValue(null);
-        mockRedisMulti.mockReturnValue(pipeline);
+        mockRedisSetEx.mockResolvedValue("OK");
         mockQueryRaw.mockResolvedValue([]);
         mockExistsSync.mockImplementation((candidatePath: string) => candidatePath.endsWith("umapWorker.ts"));
         mockPathJoin.mockImplementation((...parts: string[]) => parts.join("/").replace(/\/+/g, "/"));
@@ -210,7 +193,7 @@ describe("computeMapProjection", () => {
 
         await expect(computeMapProjection()).resolves.toEqual(cached);
         expect(mockQueryRaw).not.toHaveBeenCalled();
-        expect(mockRedisMulti).not.toHaveBeenCalled();
+        expect(mockRedisSetEx).not.toHaveBeenCalled();
         expect(mockUmapLoggerDebug).toHaveBeenCalledWith("[VIBE-MAP] Cache hit (stable key)");
     });
 
@@ -252,7 +235,7 @@ describe("computeMapProjection", () => {
             computedAt: expect.any(String),
         });
         expect(mockQueryRaw).toHaveBeenCalledTimes(1);
-        expect(mockRedisMulti).not.toHaveBeenCalled();
+        expect(mockRedisSetEx).not.toHaveBeenCalled();
         expect(mockParseEmbedding).not.toHaveBeenCalled();
         expect(workers).toHaveLength(0);
     });
@@ -309,20 +292,12 @@ describe("computeMapProjection", () => {
         ]);
         expect(mockParseEmbedding).not.toHaveBeenCalled();
         expect(workers).toHaveLength(0);
-        expect(pipeline.setEx).toHaveBeenCalledWith(
+        expect(mockRedisSetEx).toHaveBeenCalledWith(
             "vibe:map:v4:projection",
             86400,
             expect.any(String)
         );
-        expect(pipeline.del).toHaveBeenCalledWith("vibe:map:v4:track_ids");
-        expect(pipeline.sAdd).toHaveBeenCalledWith("vibe:map:v4:track_ids", [
-            "track-1",
-            "track-2",
-            "track-3",
-            "track-4",
-        ]);
-        expect(pipeline.expire).toHaveBeenCalledWith("vibe:map:v4:track_ids", 86400);
-        expect(pipeline.exec).toHaveBeenCalledTimes(1);
+        expect(mockRedisSetEx).toHaveBeenCalledTimes(1);
     });
 
     it("carries v4 audio/lyric fields, 3dp-rounded, with the hasLyrics gate", async () => {
@@ -406,7 +381,7 @@ describe("computeMapProjection", () => {
 
     it("returns the projection even when Redis caching fails", async () => {
         mockQueryRaw.mockResolvedValueOnce(makeRows(4));
-        pipeline.exec.mockImplementationOnce(async () => {
+        mockRedisSetEx.mockImplementationOnce(async () => {
             throw new Error("redis down");
         });
 
@@ -478,13 +453,12 @@ describe("computeMapProjection", () => {
             },
             execArgv: ["--import", "tsx"],
         });
-        expect(pipeline.setEx).toHaveBeenCalledWith(
+        expect(mockRedisSetEx).toHaveBeenCalledWith(
             "vibe:map:v4:projection",
             86400,
             expect.any(String)
         );
-        expect(pipeline.expire).toHaveBeenCalledWith("vibe:map:v4:track_ids", 86400);
-        expect(pipeline.exec).toHaveBeenCalledTimes(1);
+        expect(mockRedisSetEx).toHaveBeenCalledTimes(1);
     });
 
     it("times out the UMAP worker after fifteen minutes and terminates the worker", async () => {
@@ -507,7 +481,7 @@ describe("computeMapProjection", () => {
 
         await rejection;
         expect(workers[0].terminate).toHaveBeenCalledTimes(1);
-        expect(pipeline.exec).not.toHaveBeenCalled();
+        expect(mockRedisSetEx).not.toHaveBeenCalled();
     });
 
     it("rejects when the worker posts an error payload", async () => {
@@ -519,7 +493,7 @@ describe("computeMapProjection", () => {
         const { computeMapProjection } = loadModule();
 
         await expect(computeMapProjection()).rejects.toThrow("projection failed");
-        expect(pipeline.exec).not.toHaveBeenCalled();
+        expect(mockRedisSetEx).not.toHaveBeenCalled();
     });
 
     it("rejects when the worker emits an error event", async () => {
@@ -531,7 +505,7 @@ describe("computeMapProjection", () => {
         const { computeMapProjection } = loadModule();
 
         await expect(computeMapProjection()).rejects.toThrow("worker exploded");
-        expect(pipeline.exec).not.toHaveBeenCalled();
+        expect(mockRedisSetEx).not.toHaveBeenCalled();
     });
 
     it("rejects when the worker exits with a non-zero code", async () => {
@@ -543,6 +517,6 @@ describe("computeMapProjection", () => {
         const { computeMapProjection } = loadModule();
 
         await expect(computeMapProjection()).rejects.toThrow("UMAP worker exited with code 2");
-        expect(pipeline.exec).not.toHaveBeenCalled();
+        expect(mockRedisSetEx).not.toHaveBeenCalled();
     });
 });

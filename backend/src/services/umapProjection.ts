@@ -11,8 +11,10 @@ const MAX_EMBEDDINGS = 15000;
 // v4: payload gained audio-feature + lyric-analysis fields (weight mixer /
 // x-ray). Old v3 keys orphan and expire via their 24h TTL — that is the
 // whole invalidation story; never reuse a version once the shape changes.
+// (The v3-era `…:track_ids` companion SET is gone: it was written on every
+// compute but nothing anywhere read it — index-aligned consumers must use
+// the cached projection's ordered `tracks` array instead.)
 const CACHE_KEY = "vibe:map:v4:projection";
-const TRACK_IDS_KEY = "vibe:map:v4:track_ids";
 const CACHE_TTL_SECONDS = 86400;
 const UMAP_TIMEOUT_MS = 15 * 60 * 1000;
 const UMAP_WARN_MS = 5 * 60 * 1000;
@@ -131,19 +133,13 @@ function getMoodScores(track: Record<string, unknown>): Record<string, number> {
     return moods;
 }
 
-async function cacheResult(
-    result: VibeMapResponse,
-    trackIds: string[]
-): Promise<void> {
+async function cacheResult(result: VibeMapResponse): Promise<void> {
     try {
-        const pipeline = redisClient.multi();
-        pipeline.setEx(CACHE_KEY, CACHE_TTL_SECONDS, JSON.stringify(result));
-        pipeline.del(TRACK_IDS_KEY);
-        if (trackIds.length > 0) {
-            pipeline.sAdd(TRACK_IDS_KEY, trackIds);
-            pipeline.expire(TRACK_IDS_KEY, CACHE_TTL_SECONDS);
-        }
-        await pipeline.exec();
+        await redisClient.setEx(
+            CACHE_KEY,
+            CACHE_TTL_SECONDS,
+            JSON.stringify(result)
+        );
     } catch (error) {
         logger.warn(
             "[VIBE-MAP] Failed to cache projection:",
@@ -206,10 +202,7 @@ async function buildCircularLayout(rows: Array<TrackRow & { embedding: string }>
         computedAt: new Date().toISOString(),
     };
 
-    await cacheResult(
-        result,
-        rows.map((row) => row.track_id)
-    );
+    await cacheResult(result);
 
     return result;
 }
@@ -383,10 +376,7 @@ async function doCompute(): Promise<VibeMapResponse> {
         computedAt: new Date().toISOString(),
     };
 
-    await cacheResult(
-        result,
-        rows.map((row) => row.track_id)
-    );
+    await cacheResult(result);
 
     logger.info(
         `[VIBE-MAP] UMAP projection computed in ${Date.now() - startedAt}ms for ${tracks.length} tracks`
@@ -398,7 +388,7 @@ async function doCompute(): Promise<VibeMapResponse> {
 /**
  * Read the cached projection without triggering a compute. Consumers that
  * need index-alignment with the served map (the mixer endpoint) must use
- * THIS ordered `tracks` array — the TRACK_IDS_KEY Redis SET is unordered.
+ * THIS ordered `tracks` array.
  */
 export async function getCachedProjection(): Promise<VibeMapResponse | null> {
     const cached = await redisClient.get(CACHE_KEY);
