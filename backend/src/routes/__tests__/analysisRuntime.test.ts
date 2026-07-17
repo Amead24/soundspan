@@ -23,6 +23,10 @@ jest.mock("../../utils/db", () => ({
             findUnique: jest.fn(),
             update: jest.fn(),
         },
+        trackLyrics: {
+            findMany: jest.fn(),
+            updateMany: jest.fn(),
+        },
         systemSettings: {
             update: jest.fn(),
         },
@@ -52,6 +56,7 @@ jest.mock("../../services/enrichmentFailureService", () => ({
         getFailures: jest.fn(),
         resetRetryCount: jest.fn(),
         resolveByEntity: jest.fn(),
+        resolveByEntities: jest.fn(),
     },
 }));
 
@@ -83,6 +88,9 @@ const mockClearFailure = enrichmentFailureService.clearFailure as jest.Mock;
 const mockGetFailures = enrichmentFailureService.getFailures as jest.Mock;
 const mockResetRetryCount = enrichmentFailureService.resetRetryCount as jest.Mock;
 const mockResolveByEntity = enrichmentFailureService.resolveByEntity as jest.Mock;
+const mockResolveByEntities = enrichmentFailureService.resolveByEntities as jest.Mock;
+const mockTrackLyricsFindMany = prisma.trackLyrics.findMany as jest.Mock;
+const mockTrackLyricsUpdateMany = prisma.trackLyrics.updateMany as jest.Mock;
 
 function findRouteLayer(
     stack: any[],
@@ -161,6 +169,7 @@ describe("analysis routes runtime", () => {
     const postVibeStart = getHandler("post", "/vibe/start");
     const postVibeRetry = getHandler("post", "/vibe/retry");
     const postVibeSuccess = getHandler("post", "/vibe/success");
+    const postLyricsRetry = getHandler("post", "/lyrics/retry");
 
     beforeEach(() => {
         jest.clearAllMocks();
@@ -189,6 +198,9 @@ describe("analysis routes runtime", () => {
         mockGetFailures.mockResolvedValue({ failures: [] });
         mockResetRetryCount.mockResolvedValue({});
         mockResolveByEntity.mockResolvedValue({});
+        mockResolveByEntities.mockResolvedValue(0);
+        mockTrackLyricsFindMany.mockResolvedValue([]);
+        mockTrackLyricsUpdateMany.mockResolvedValue({ count: 0 });
 
         process.env.INTERNAL_API_SECRET = "test-secret";
         jest.spyOn(os, "cpus").mockReturnValue(new Array(8).fill({}) as any);
@@ -608,6 +620,59 @@ describe("analysis routes runtime", () => {
             message: "Queued 1 failed tracks for vibe embedding retry",
             queued: 1,
         });
+    });
+
+    it("resets failed lyric analyses to pending or no-ops when none exist", async () => {
+        mockTrackLyricsFindMany.mockResolvedValueOnce([]);
+        const noFailuresReq = {} as any;
+        const noFailuresRes = createRes();
+        await postLyricsRetry(noFailuresReq, noFailuresRes);
+        expect(noFailuresRes.body).toEqual({
+            message: "No failed lyric analyses to retry",
+            reset: 0,
+        });
+        expect(mockTrackLyricsUpdateMany).not.toHaveBeenCalled();
+
+        mockTrackLyricsFindMany.mockResolvedValueOnce([
+            { trackId: "t1" },
+            { trackId: "t2" },
+        ]);
+        mockTrackLyricsUpdateMany.mockResolvedValueOnce({ count: 2 });
+
+        const req = {} as any;
+        const res = createRes();
+        await postLyricsRetry(req, res);
+
+        // The reset must clear the whole failed state — status, error, retry
+        // count (the Essentia retry-count trap: a bare status reset leaves
+        // max-retried rows skipped forever) — and go to 'pending' so the
+        // enrichment queue phase (NULL OR 'pending') picks the rows up.
+        expect(mockTrackLyricsUpdateMany).toHaveBeenCalledWith({
+            where: { trackId: { in: ["t1", "t2"] }, analysisStatus: "failed" },
+            data: {
+                analysisStatus: "pending",
+                analysisError: null,
+                analysisStartedAt: null,
+                analysisRetryCount: 0,
+            },
+        });
+        expect(mockResolveByEntities).toHaveBeenCalledWith("lyrics", ["t1", "t2"]);
+        expect(res.body).toEqual({
+            message:
+                "Reset 2 failed lyric analyses; the next enrichment cycle will re-queue them",
+            reset: 2,
+        });
+    });
+
+    it("returns 500 when lyrics retry fails", async () => {
+        mockTrackLyricsFindMany.mockRejectedValue(new Error("lyrics retry failed"));
+        const req = {} as any;
+        const res = createRes();
+
+        await postLyricsRetry(req, res);
+
+        expect(res.statusCode).toBe(500);
+        expect(res.body).toEqual({ error: "Failed to retry lyric analyses" });
     });
 
     it("validates and resolves vibe success endpoint", async () => {

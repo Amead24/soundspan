@@ -503,6 +503,40 @@ describe("enrichmentFailureService", () => {
         });
     });
 
+    describe("resolveByEntities", () => {
+        it("resolves unresolved failures for the given entities in one update", async () => {
+            prisma.enrichmentFailure.updateMany.mockResolvedValueOnce({ count: 3 });
+
+            const result = await enrichmentFailureService.resolveByEntities(
+                "lyrics",
+                ["t1", "t2", "t3"]
+            );
+
+            expect(prisma.enrichmentFailure.updateMany).toHaveBeenCalledWith({
+                where: {
+                    entityType: "lyrics",
+                    entityId: { in: ["t1", "t2", "t3"] },
+                    resolved: false,
+                },
+                data: {
+                    resolved: true,
+                    resolvedAt: expect.any(Date),
+                },
+            });
+            expect(result).toBe(3);
+        });
+
+        it("no-ops on an empty entity list without touching the database", async () => {
+            const result = await enrichmentFailureService.resolveByEntities(
+                "lyrics",
+                []
+            );
+
+            expect(prisma.enrichmentFailure.updateMany).not.toHaveBeenCalled();
+            expect(result).toBe(0);
+        });
+    });
+
     describe("cleanupOrphanedFailures", () => {
         it("resolves orphaned artist/track/audio/vibe entries and returns counts", async () => {
             prisma.enrichmentFailure.findMany.mockResolvedValueOnce([

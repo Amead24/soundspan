@@ -400,6 +400,39 @@ class EnrichmentFailureService {
          return result.count > 0;
      }
 
+     /**
+      * Bulk variant of resolveByEntity for admin retry endpoints that reset
+      * many entities in one request (e.g. POST /api/analysis/lyrics/retry).
+      */
+     async resolveByEntities(
+         entityType: "vibe" | "audio" | "lyrics",
+         entityIds: string[]
+     ): Promise<number> {
+         if (entityIds.length === 0) {
+             return 0;
+         }
+
+         const result = await prisma.enrichmentFailure.updateMany({
+             where: {
+                 entityType,
+                 entityId: { in: entityIds },
+                 resolved: false,
+             },
+             data: {
+                 resolved: true,
+                 resolvedAt: new Date(),
+             },
+         });
+
+         if (result.count > 0) {
+             logger.debug(
+                 `[Enrichment Failures] Resolved ${result.count} failures for ${entityType} (${entityIds.length} entities)`
+             );
+         }
+
+         return result.count;
+     }
+
 }
 
 // Singleton instance

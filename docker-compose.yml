@@ -457,8 +457,11 @@ services:
         deploy:
             resources:
                 limits:
-                    # 3GB is sufficient - we only process 60s chunks
-                    memory: 3G
+                    # CLAP audio embedding peaks at 2-3GB (60s chunks); the
+                    # lyric worker's second resident model (nomic-embed) adds
+                    # ~0.5GB+, and both queues drain concurrently after a
+                    # deploy — 3G risked OOM-kills during the lyric backfill.
+                    memory: 4G
                     cpus: "4"
                 reservations:
                     memory: 1G

@@ -72,9 +72,10 @@ stays rate limited (`apiLimiter`) and returns
 
 Exception: the CLAP analyzer machine callbacks in
 `backend/src/routes/analysisInternal.ts` (`/api/analysis/vibe/failure`,
-`/api/analysis/vibe/success`) remain mounted even when
-`AUDIO_ANALYSIS_ENABLED=false`, so analyzers draining in-flight work can still
-report results.
+`/api/analysis/vibe/success`, and the lyric worker's
+`/api/analysis/lyrics/failure`, `/api/analysis/lyrics/success`) remain mounted
+even when `AUDIO_ANALYSIS_ENABLED=false`, so analyzers draining in-flight work
+can still report results.
 
 ## Update Rule
 
