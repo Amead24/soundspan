@@ -52,6 +52,7 @@ import { TrackPreferenceButtons } from "@/components/player/TrackPreferenceButto
 import { buildPreferenceMetadata } from "@/hooks/useTrackPreference";
 import { MapCanvas } from "./MapCanvas";
 import { MixerPanel } from "./MixerPanel";
+import { XrayPanel } from "./XrayPanel";
 import { useMixer } from "./useMixer";
 import { buildScoreColorLut } from "./vibeMixer";
 import { computeForcePositions } from "./mapForce";
@@ -147,7 +148,7 @@ const TRAIL_FADE_RECOMPUTE_MS = 60_000;
  * below), and entering any vibe mode / a sweep chip appearing genuinely
  * closes it instead of merely hiding it.
  */
-type AuxSurface = "queue" | "trail" | "about" | "mixer" | null;
+type AuxSurface = "queue" | "trail" | "about" | "mixer" | "xray" | null;
 
 const EMPTY_TRAIL: { x: number; y: number; alpha: number }[] = [];
 
@@ -1615,6 +1616,8 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
                         onToggleAboutPopover={() => toggleAuxSurface("about")}
                         mixerOpen={mixerActive}
                         onToggleMixer={() => toggleAuxSurface("mixer")}
+                        xrayOpen={auxSurface === "xray"}
+                        onToggleXray={() => toggleAuxSurface("xray")}
                         isFullscreen={isFullscreen}
                         onToggleFullscreen={() => setIsFullscreen((v) => !v)}
                     />
@@ -1664,6 +1667,21 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
                     nowPlayingId={
                         beaconOnMap && currentTrack ? currentTrack.id : null
                     }
+                    onLocate={locateTrack}
+                    onClose={() => setAuxSurface(null)}
+                />
+            )}
+
+            {/* Song x-ray panel — compare two tracks component by component.
+                Same aux slot rules; A/B picking is in-panel (search /
+                shortcuts), never a new dot-click gesture. */}
+            {auxSurface === "xray" && !sweepChipOpen && (
+                <XrayPanel
+                    tracks={tracks}
+                    nowPlayingId={
+                        beaconOnMap && currentTrack ? currentTrack.id : null
+                    }
+                    mixerSeedId={mixer.seedId}
                     onLocate={locateTrack}
                     onClose={() => setAuxSurface(null)}
                 />

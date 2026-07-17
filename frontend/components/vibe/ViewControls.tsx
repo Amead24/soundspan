@@ -47,6 +47,7 @@ import {
     Maximize2,
     Minimize2,
     Network,
+    ArrowLeftRight,
     RotateCcw,
     Route,
     Shuffle,
@@ -56,6 +57,8 @@ import {
 } from "lucide-react";
 import { Fragment } from "react";
 import { FILTERABLE_MOODS, VIBE_ACCENTS, getMoodColor, moodLabel } from "./types";
+import { ABOUT_DIMENSIONS_INTRO, DIMENSION_COPY } from "./vibeCopy";
+import { MIXER_COMPONENTS } from "./vibeMixer";
 
 export type LayoutMode = "natural" | "spread";
 
@@ -109,6 +112,9 @@ export interface ViewControlsProps {
     /** Weight-mixer panel open state + toggle (auxSurface "mixer"). */
     mixerOpen: boolean;
     onToggleMixer: () => void;
+    /** Song x-ray panel open state + toggle (auxSurface "xray"). */
+    xrayOpen: boolean;
+    onToggleXray: () => void;
     isFullscreen: boolean;
     onToggleFullscreen: () => void;
 }
@@ -233,6 +239,26 @@ export function AboutMapPopover() {
                 </p>
                 <GestureCheatSheet />
             </div>
+            <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                    Dimensions
+                </p>
+                <p className="text-xs text-gray-400 leading-relaxed mb-2">
+                    {ABOUT_DIMENSIONS_INTRO}
+                </p>
+                <dl className="space-y-2">
+                    {MIXER_COMPONENTS.map((key) => (
+                        <Fragment key={key}>
+                            <dt className="text-xs font-medium text-gray-200">
+                                {DIMENSION_COPY[key].label}
+                            </dt>
+                            <dd className="text-xs text-gray-400 leading-relaxed">
+                                {DIMENSION_COPY[key].aboutBlurb}
+                            </dd>
+                        </Fragment>
+                    ))}
+                </dl>
+            </div>
         </div>
     );
 }
@@ -267,6 +293,8 @@ export function ViewControls({
     onToggleAboutPopover,
     mixerOpen,
     onToggleMixer,
+    xrayOpen,
+    onToggleXray,
     isFullscreen,
     onToggleFullscreen,
 }: ViewControlsProps) {
@@ -458,6 +486,16 @@ export function ViewControls({
                 aria-label="Similarity mixer"
             >
                 <SlidersHorizontal className="w-5 h-5" />
+            </button>
+            <button
+                type="button"
+                onClick={onToggleXray}
+                aria-expanded={xrayOpen}
+                className={`${BTN} ${xrayOpen ? "bg-white/10 text-white" : ""}`}
+                title="Song x-ray: compare two tracks dimension by dimension"
+                aria-label="Song x-ray"
+            >
+                <ArrowLeftRight className="w-5 h-5" />
             </button>
             <div className="relative">
                 <button
