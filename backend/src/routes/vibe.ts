@@ -14,7 +14,10 @@ import {
     resolveUserWeights,
     similarityWeightsSchema,
 } from "../services/similarityWeights";
-import { computeMapProjection } from "../services/umapProjection";
+import {
+    computeMapProjection,
+    getCachedProjection,
+} from "../services/umapProjection";
 import {
     applyTrackPreferenceOrderBias,
     applyTrackPreferenceSimilarityBias,
@@ -872,6 +875,146 @@ router.post("/alchemy", requireAuth, async (req, res) => {
  *       401:
  *         description: Not authenticated
  */
+const MIXER_CACHE_TTL_SECONDS = 3600;
+
+function roundSim(value: number): number {
+    return Math.round(value * 10000) / 10000;
+}
+
+/**
+ * @openapi
+ * /api/vibe/mixer/{trackId}:
+ *   get:
+ *     summary: Per-track similarity components against a seed track
+ *     description: >
+ *       Returns CLAP and lyric-semantic similarity of EVERY track in the
+ *       cached vibe-map projection against the seed track, as arrays
+ *       index-aligned to the projection's `tracks` order (the client blends
+ *       them with its local weights for live map recoloring). Exact scans,
+ *       not ANN — bounded by the 15k projection cap. The response's
+ *       `computedAt`/`count` must match the client's map payload or the
+ *       client must refetch the map first.
+ *     tags: [Vibe]
+ *     security:
+ *       - sessionAuth: []
+ *       - apiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: trackId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Index-aligned clapSim/lyricSim arrays (null where missing)
+ *       404:
+ *         description: Seed track has no CLAP embedding
+ *       409:
+ *         description: No cached map projection exists yet — load the map first
+ *       401:
+ *         description: Not authenticated
+ */
+router.get<{ trackId: string }>("/mixer/:trackId", requireAuth, async (req, res) => {
+    try {
+        const { trackId } = req.params;
+
+        const projection = await getCachedProjection();
+        if (!projection || projection.tracks.length === 0) {
+            return res.status(409).json({
+                error: "No cached map projection",
+                stale: true,
+                message: "Load the vibe map first, then request mixer components",
+            });
+        }
+
+        const cacheKey = `vibe:mixer:v1:${trackId}:${projection.computedAt}`;
+        try {
+            const cached = await redisClient.get(cacheKey);
+            if (cached) {
+                return res.json(JSON.parse(cached));
+            }
+        } catch {
+            // cache is best-effort
+        }
+
+        const seedEmbedding = await fetchTrackEmbedding(trackId);
+        if (!seedEmbedding) {
+            return res.status(404).json({
+                error: "Track has no vibe embedding",
+                message: "This track may not have been analyzed yet",
+            });
+        }
+
+        const ids = projection.tracks.map((track) => track.id);
+
+        // Exact scans (no ANN, no ivfflat recall concerns): 15k × 512/768-D
+        // dot products are tens of ms in Postgres.
+        const clapRows = await prisma.$queryRaw<{ track_id: string; sim: number }[]>`
+            SELECT track_id, 1 - (embedding <=> ${seedEmbedding}::vector) as sim
+            FROM track_embeddings
+            WHERE track_id = ANY(${ids}::text[])
+        `;
+
+        // Lyric similarity only when the seed itself is lyric-analyzed and
+        // non-instrumental; candidates are filtered the same way so a null
+        // in lyricSim always means "lyric dials don't apply to this pair".
+        const seedLyric = await prisma.$queryRaw<{ embedding: string }[]>`
+            SELECT tle.embedding::text
+            FROM track_lyric_embeddings tle
+            JOIN "TrackLyrics" tl ON tl."trackId" = tle.track_id
+            WHERE tle.track_id = ${trackId}
+                AND tl."analysisStatus" = 'completed'
+                AND tl."isInstrumental" = false
+            LIMIT 1
+        `;
+
+        let lyricRows: { track_id: string; sim: number }[] = [];
+        if (seedLyric.length > 0) {
+            const seedLyricEmbedding = parseEmbedding(seedLyric[0].embedding);
+            lyricRows = await prisma.$queryRaw<{ track_id: string; sim: number }[]>`
+                SELECT tle.track_id, 1 - (tle.embedding <=> ${seedLyricEmbedding}::vector) as sim
+                FROM track_lyric_embeddings tle
+                JOIN "TrackLyrics" tl ON tl."trackId" = tle.track_id
+                WHERE tle.track_id = ANY(${ids}::text[])
+                    AND tl."analysisStatus" = 'completed'
+                    AND tl."isInstrumental" = false
+            `;
+        }
+
+        const clapById = new Map(clapRows.map((row) => [row.track_id, row.sim]));
+        const lyricById = new Map(lyricRows.map((row) => [row.track_id, row.sim]));
+
+        const response = {
+            seedId: trackId,
+            computedAt: projection.computedAt,
+            count: ids.length,
+            clapSim: ids.map((id) => {
+                const sim = clapById.get(id);
+                return sim === undefined ? null : roundSim(sim);
+            }),
+            lyricSim: ids.map((id) => {
+                const sim = lyricById.get(id);
+                return sim === undefined ? null : roundSim(sim);
+            }),
+        };
+
+        try {
+            await redisClient.setEx(
+                cacheKey,
+                MIXER_CACHE_TTL_SECONDS,
+                JSON.stringify(response)
+            );
+        } catch {
+            // cache is best-effort
+        }
+
+        res.json(response);
+    } catch (error) {
+        logger.error("Vibe mixer components error:", error);
+        res.status(500).json({ error: "Failed to compute mixer components" });
+    }
+});
+
 /** Resolve a user's stored similarity weights (defaults when unset/invalid). */
 async function loadUserSimilarityWeights(userId: string | undefined) {
     if (!userId) return { ...DEFAULT_SIMILARITY_WEIGHTS };
