@@ -98,6 +98,7 @@ Start-here guide for business logic modules in `backend/src/services`.
 | `backend/src/services/trackReconciliation.ts` | Core |
 | `backend/src/services/umapProjection.ts` | Core |
 | `backend/src/services/unifiedTrackResponse.ts` | Core |
+| `backend/src/services/lyricsAnalysisCleanup.ts` | Core |
 | `backend/src/services/vibeAnalysisCleanup.ts` | Core |
 | `backend/src/services/vibeVocabulary.ts` | Core |
 | `backend/src/services/wikidata.ts` | Core |

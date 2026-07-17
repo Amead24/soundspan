@@ -10,6 +10,7 @@ const CLAP_ANALYZER_PATH = "/app/audio-analyzer-clap/analyzer.py";
 export interface AvailableFeatures {
     musicCNN: boolean;
     vibeEmbeddings: boolean;
+    lyricAnalysis: boolean;
 }
 
 const HEARTBEAT_TTL = 300000; // 5 minutes
@@ -25,16 +26,17 @@ class FeatureDetectionService {
             return this.cache;
         }
 
-        const [musicCNN, vibeEmbeddings] = await Promise.all([
+        const [musicCNN, vibeEmbeddings, lyricAnalysis] = await Promise.all([
             this.checkMusicCNN(),
             this.checkCLAP(),
+            this.checkLyricWorker(),
         ]);
 
-        this.cache = { musicCNN, vibeEmbeddings };
+        this.cache = { musicCNN, vibeEmbeddings, lyricAnalysis };
         this.lastCheck = now;
 
         logger.debug(
-            `[FEATURE-DETECTION] Features: musicCNN=${musicCNN}, vibeEmbeddings=${vibeEmbeddings}`
+            `[FEATURE-DETECTION] Features: musicCNN=${musicCNN}, vibeEmbeddings=${vibeEmbeddings}, lyricAnalysis=${lyricAnalysis}`
         );
 
         return this.cache;
@@ -85,6 +87,30 @@ class FeatureDetectionService {
             return embeddingCount > 0;
         } catch (error) {
             logger.error("[FEATURE-DETECTION] Error checking CLAP:", error);
+            return false;
+        }
+    }
+
+    private async checkLyricWorker(): Promise<boolean> {
+        try {
+            // Heartbeat only — deliberately no bundled-script or DB-evidence
+            // fallback. The lyric worker rides inside the CLAP sidecar image,
+            // so the CLAP script existing on disk proves nothing about THIS
+            // image carrying the worker, and past DB results don't mean
+            // anything can drain the queue today. The sole consumer is
+            // enrichment queueing, which must never flip rows to
+            // "processing" that no live worker will consume.
+            const heartbeat = await redisClient.get("lyrics:worker:heartbeat");
+            if (heartbeat) {
+                const timestamp = parseInt(heartbeat, 10);
+                return !isNaN(timestamp) && Date.now() - timestamp < HEARTBEAT_TTL;
+            }
+            return false;
+        } catch (error) {
+            logger.error(
+                "[FEATURE-DETECTION] Error checking lyric worker:",
+                error
+            );
             return false;
         }
     }

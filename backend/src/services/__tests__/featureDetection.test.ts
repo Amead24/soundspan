@@ -47,7 +47,7 @@ describe("featureDetection service", () => {
         return mod.featureDetection;
     }
 
-    it("reports both features when analyzer scripts exist", async () => {
+    it("reports analyzer features when scripts exist; lyric worker still needs a heartbeat", async () => {
         const service = await loadService();
         mockExistsSync.mockImplementation((candidate: string) =>
             [
@@ -55,12 +55,17 @@ describe("featureDetection service", () => {
                 "/app/audio-analyzer-clap/analyzer.py",
             ].includes(String(candidate))
         );
+        mockRedisGet.mockResolvedValue(null);
 
         await expect(service.getFeatures()).resolves.toEqual({
             musicCNN: true,
             vibeEmbeddings: true,
+            lyricAnalysis: false,
         });
-        expect(mockRedisGet).not.toHaveBeenCalled();
+        // The lyric worker has no bundled-script fallback — its check always
+        // hits the heartbeat key, and only that key.
+        expect(mockRedisGet).toHaveBeenCalledTimes(1);
+        expect(mockRedisGet).toHaveBeenCalledWith("lyrics:worker:heartbeat");
         expect(mockTrackFindFirst).not.toHaveBeenCalled();
         expect(mockTrackEmbeddingCount).not.toHaveBeenCalled();
     });
@@ -69,18 +74,32 @@ describe("featureDetection service", () => {
         const service = await loadService();
         const now = Date.now();
         mockExistsSync.mockReturnValue(false);
-        mockRedisGet
-            .mockResolvedValueOnce(String(now))
-            .mockResolvedValueOnce(null);
+        mockRedisGet.mockImplementation(async (key: string) => {
+            if (key === "audio:worker:heartbeat") return String(now);
+            if (key === "lyrics:worker:heartbeat") return String(now);
+            return null;
+        });
         mockTrackEmbeddingCount.mockResolvedValueOnce(2);
 
         await expect(service.getFeatures()).resolves.toEqual({
             musicCNN: true,
             vibeEmbeddings: true,
+            lyricAnalysis: true,
         });
         expect(mockRedisGet).toHaveBeenCalledWith("audio:worker:heartbeat");
         expect(mockRedisGet).toHaveBeenCalledWith("clap:worker:heartbeat");
+        expect(mockRedisGet).toHaveBeenCalledWith("lyrics:worker:heartbeat");
         expect(mockTrackEmbeddingCount).toHaveBeenCalledTimes(1);
+    });
+
+    it("treats a stale lyric-worker heartbeat as absent", async () => {
+        const service = await loadService();
+        const staleMs = Date.now() - 6 * 60 * 1000; // HEARTBEAT_TTL is 5 min
+        mockExistsSync.mockReturnValue(true);
+        mockRedisGet.mockResolvedValue(String(staleMs));
+
+        const features = await service.getFeatures();
+        expect(features.lyricAnalysis).toBe(false);
     });
 
     it("falls back to database feature presence when heartbeat is stale or missing", async () => {
@@ -93,6 +112,7 @@ describe("featureDetection service", () => {
         await expect(service.getFeatures()).resolves.toEqual({
             musicCNN: true,
             vibeEmbeddings: false,
+            lyricAnalysis: false,
         });
         expect(mockTrackFindFirst).toHaveBeenCalledWith({
             where: { energy: { not: null } },
@@ -110,6 +130,7 @@ describe("featureDetection service", () => {
         await expect(service.getFeatures()).resolves.toEqual({
             musicCNN: false,
             vibeEmbeddings: false,
+            lyricAnalysis: false,
         });
         expect(mockLoggerError).toHaveBeenCalledWith(
             "[FEATURE-DETECTION] Error checking MusicCNN:",
@@ -117,6 +138,10 @@ describe("featureDetection service", () => {
         );
         expect(mockLoggerError).toHaveBeenCalledWith(
             "[FEATURE-DETECTION] Error checking CLAP:",
+            expect.any(Error)
+        );
+        expect(mockLoggerError).toHaveBeenCalledWith(
+            "[FEATURE-DETECTION] Error checking lyric worker:",
             expect.any(Error)
         );
     });
@@ -128,7 +153,11 @@ describe("featureDetection service", () => {
         );
 
         const first = await service.getFeatures();
-        expect(first).toEqual({ musicCNN: true, vibeEmbeddings: true });
+        expect(first).toEqual({
+            musicCNN: true,
+            vibeEmbeddings: true,
+            lyricAnalysis: false,
+        });
 
         mockExistsSync.mockReturnValue(false);
         mockRedisGet.mockResolvedValue(null);
@@ -136,10 +165,18 @@ describe("featureDetection service", () => {
         mockTrackEmbeddingCount.mockResolvedValue(0);
 
         const cached = await service.getFeatures();
-        expect(cached).toEqual({ musicCNN: true, vibeEmbeddings: true });
+        expect(cached).toEqual({
+            musicCNN: true,
+            vibeEmbeddings: true,
+            lyricAnalysis: false,
+        });
 
         service.invalidateCache();
         const refreshed = await service.getFeatures();
-        expect(refreshed).toEqual({ musicCNN: false, vibeEmbeddings: false });
+        expect(refreshed).toEqual({
+            musicCNN: false,
+            vibeEmbeddings: false,
+            lyricAnalysis: false,
+        });
     });
 });

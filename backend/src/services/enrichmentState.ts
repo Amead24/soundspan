@@ -16,7 +16,7 @@ const ENRICHMENT_STATE_REDIS_RETRY_ATTEMPTS = 3;
 const ENRICHMENT_PUBLISHER_REDIS_RETRY_ATTEMPTS = 3;
 
 export type EnrichmentStatus = "idle" | "running" | "paused" | "stopping";
-export type EnrichmentPhase = "artists" | "tracks" | "audio" | "vibe" | "podcasts" | null;
+export type EnrichmentPhase = "artists" | "tracks" | "audio" | "vibe" | "lyrics" | "podcasts" | null;
 
 export interface EnrichmentState {
     status: EnrichmentStatus;

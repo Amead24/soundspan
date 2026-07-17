@@ -10,7 +10,7 @@ import { prisma } from "../utils/db";
 
 export interface EnrichmentFailure {
     id: string;
-    entityType: "artist" | "track" | "audio" | "vibe";
+    entityType: "artist" | "track" | "audio" | "vibe" | "lyrics";
     entityId: string;
     entityName: string | null;
     errorMessage: string | null;
@@ -27,7 +27,7 @@ export interface EnrichmentFailure {
 }
 
 export interface RecordFailureInput {
-    entityType: "artist" | "track" | "audio" | "vibe";
+    entityType: "artist" | "track" | "audio" | "vibe" | "lyrics";
     entityId: string;
     entityName?: string;
     errorMessage: string;
@@ -36,7 +36,7 @@ export interface RecordFailureInput {
 }
 
 export interface GetFailuresOptions {
-    entityType?: "artist" | "track" | "audio" | "vibe";
+    entityType?: "artist" | "track" | "audio" | "vibe" | "lyrics";
     includeSkipped?: boolean;
     includeResolved?: boolean;
     limit?: number;
@@ -378,7 +378,7 @@ class EnrichmentFailureService {
       * Resolve failure records for an entity (track/artist) that succeeded.
       * Used when a track's vibe embedding succeeds after previous failures.
       */
-     async resolveByEntity(entityType: "vibe" | "audio", entityId: string): Promise<boolean> {
+     async resolveByEntity(entityType: "vibe" | "audio" | "lyrics", entityId: string): Promise<boolean> {
          const result = await prisma.enrichmentFailure.updateMany({
              where: {
                  entityType,

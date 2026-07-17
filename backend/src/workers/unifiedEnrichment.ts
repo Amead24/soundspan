@@ -24,6 +24,7 @@ import { enrichmentFailureService } from "../services/enrichmentFailureService";
 import { audioAnalysisCleanupService } from "../services/audioAnalysisCleanup";
 import { rateLimiter } from "../services/rateLimiter";
 import { vibeAnalysisCleanupService } from "../services/vibeAnalysisCleanup";
+import { lyricsAnalysisCleanupService } from "../services/lyricsAnalysisCleanup";
 import { getSystemSettings } from "../utils/systemSettings";
 import { featureDetection } from "../services/featureDetection";
 import { moodBucketService } from "../services/moodBucketService";
@@ -768,6 +769,18 @@ async function runEnrichmentCycle(fullMode: boolean): Promise<{
             vibeQueued = vibeResult;
         }
 
+        // Lyrics phase (fetch + instrumental classification + analysis
+        // queueing) is gated by its own coarse flag — it has no dependency on
+        // the audio pipelines, so LYRICS_ANALYSIS_ENABLED works even where
+        // AUDIO_ANALYSIS_ENABLED is off.
+        if (config.features.lyricsAnalysis) {
+            const lyricsResult = await runPhase("lyrics", executeLyricsPhase);
+            if (lyricsResult === null) {
+                consecutiveSystemFailures = 0;
+                return { artists: artistsProcessed, tracks: tracksProcessed, audioQueued };
+            }
+        }
+
         // Podcast refresh phase -- only runs if subscriptions exist
         await runPhase("podcasts", executePodcastRefreshPhase);
 
@@ -1452,7 +1465,7 @@ async function shouldHaltCycle(): Promise<boolean> {
  * Run a phase and return result. Returns null if cycle should halt.
  */
 async function runPhase(
-    phaseName: "artists" | "tracks" | "audio" | "vibe" | "podcasts",
+    phaseName: "artists" | "tracks" | "audio" | "vibe" | "lyrics" | "podcasts",
     executor: () => Promise<number>,
 ): Promise<number | null> {
     await enrichmentStateService.updateState({
@@ -1612,6 +1625,185 @@ async function executeVibePhase(): Promise<number> {
     }
 
     return result;
+}
+
+// Lyrics phase configuration. Fetch is capped well below the queue batch
+// because each fetch is an LRCLIB round trip (lyrics.ts's own rate limiter
+// paces it); queueing is just Redis RPUSHes.
+const LYRICS_FETCH_BATCH_SIZE = 500;
+const LYRICS_QUEUE_BATCH_SIZE = 1000;
+const LYRICS_QUEUE_KEY = "lyrics:analysis:queue";
+
+/**
+ * Lyrics step 1: bulk-fetch lyrics for tracks with no TrackLyrics row yet.
+ * getLyrics() runs the full cache → embedded-tags → LRCLIB waterfall and
+ * negative-caches misses as source:'none', so every attempted track ends up
+ * with a row and is never re-fetched by this step.
+ */
+async function fetchMissingLyrics(): Promise<number> {
+    const tracks = await withEnrichmentPrismaRetry(
+        "fetchMissingLyrics.track.findMany",
+        () =>
+            prisma.track.findMany({
+                // Track.filePath is non-nullable (String @unique), so "has a
+                // local file" needs no filter here; getLyrics() itself falls
+                // back to LRCLIB when embedded-tag extraction can't run.
+                where: { lyrics: { is: null } },
+                select: { id: true },
+                take: LYRICS_FETCH_BATCH_SIZE,
+            }),
+    );
+
+    if (tracks.length === 0) {
+        return 0;
+    }
+
+    // Dynamic import keeps lyrics.ts (and its utils/redis import chain) out
+    // of this module's load graph — the phase only runs when the flag is on.
+    const { getLyrics } = await import("../services/lyrics");
+
+    let fetched = 0;
+    for (const track of tracks) {
+        try {
+            await getLyrics(track.id);
+            fetched++;
+        } catch (error) {
+            logger.debug(`   Lyrics fetch failed for ${track.id}:`, error);
+        }
+    }
+
+    return fetched;
+}
+
+/**
+ * Lyrics step 2: classify no-lyrics rows as instrumental so they are excluded
+ * from analysis queueing (and later from lyric-weighted scoring). This is a
+ * status flip, not an analysis result — the sidecar remains the only writer
+ * of results. Conflates "instrumental" with "lyrics not found" deliberately
+ * (both must be excluded the same way); a future re-fetch pass can revisit.
+ */
+async function classifyInstrumentalLyrics(): Promise<number> {
+    const result = await withEnrichmentPrismaRetry(
+        "classifyInstrumentalLyrics.trackLyrics.updateMany",
+        () =>
+            prisma.trackLyrics.updateMany({
+                where: {
+                    analysisStatus: null,
+                    OR: [
+                        { source: "none" },
+                        {
+                            AND: [
+                                { OR: [{ plainLyrics: null }, { plainLyrics: "" }] },
+                                { OR: [{ syncedLyrics: null }, { syncedLyrics: "" }] },
+                            ],
+                        },
+                    ],
+                },
+                data: { analysisStatus: "instrumental", isInstrumental: true },
+            }),
+    );
+
+    return result.count;
+}
+
+/**
+ * Lyrics step 3: queue analyzable rows for the sidecar's lyric worker.
+ * Payload is {trackId} only — the worker re-reads lyric text from the DB, so
+ * jobs stay tiny and idempotent. RPUSH first, flip to processing second: if
+ * Redis drops the job after the flip, the row strands until the stale sweep.
+ */
+async function queueLyricAnalysis(): Promise<number> {
+    const rows = await withEnrichmentPrismaRetry(
+        "queueLyricAnalysis.trackLyrics.findMany",
+        () =>
+            prisma.trackLyrics.findMany({
+                where: {
+                    isInstrumental: false,
+                    // Stale-sweep resets go to NULL, admin resets to 'pending'
+                    // — accept both or sweep-recovered rows strand forever.
+                    OR: [{ analysisStatus: null }, { analysisStatus: "pending" }],
+                },
+                select: { trackId: true },
+                take: LYRICS_QUEUE_BATCH_SIZE,
+            }),
+    );
+
+    if (rows.length === 0) {
+        return 0;
+    }
+
+    let queued = 0;
+
+    for (const row of rows) {
+        try {
+            await withEnrichmentQueueRedisRetry(
+                `queueLyricAnalysis.rpush(${row.trackId})`,
+                () =>
+                    getRedis().rpush(
+                        LYRICS_QUEUE_KEY,
+                        JSON.stringify({ trackId: row.trackId }),
+                    ),
+            );
+
+            await prisma.trackLyrics.update({
+                where: { trackId: row.trackId },
+                data: {
+                    analysisStatus: "processing",
+                    analysisStartedAt: new Date(),
+                },
+            });
+
+            queued++;
+        } catch (error) {
+            logger.error(
+                `   Failed to queue lyric analysis for ${row.trackId}:`,
+                error,
+            );
+        }
+    }
+
+    return queued;
+}
+
+async function executeLyricsPhase(): Promise<number> {
+    const fetched = await fetchMissingLyrics();
+    if (fetched > 0) {
+        logger.debug(`[ENRICHMENT] Fetched lyrics for ${fetched} tracks`);
+    }
+
+    const classified = await classifyInstrumentalLyrics();
+    if (classified > 0) {
+        logger.debug(
+            `[ENRICHMENT] Classified ${classified} tracks as instrumental (no usable lyrics)`,
+        );
+    }
+
+    const { reset, failed } =
+        await lyricsAnalysisCleanupService.cleanupStaleProcessing();
+    if (reset > 0 || failed > 0) {
+        logger.debug(
+            `[ENRICHMENT] Cleaned up stale lyric analysis (${reset} reset, ${failed} failed)`,
+        );
+    }
+
+    // Queue only against a live worker heartbeat. Unlike CLAP, there is no
+    // bundled-script fallback here: an older sidecar image has no lyric
+    // worker, so queueing blind would flip rows to 'processing' that nothing
+    // drains (until the stale sweep un-sticks them half an hour later).
+    const features = await featureDetection.getFeatures();
+    if (!features.lyricAnalysis) {
+        logger.debug(
+            "[Enrichment] Lyric worker not detected - skipping lyric analysis queueing",
+        );
+        return 0;
+    }
+
+    const queued = await queueLyricAnalysis();
+    if (queued > 0) {
+        logger.debug(`[ENRICHMENT] Queued ${queued} tracks for lyric analysis`);
+    }
+
+    return queued;
 }
 
 /**
@@ -1909,6 +2101,7 @@ export const __unifiedEnrichmentTestables = {
     runEnrichmentCycle,
     enrichArtistsBatch,
     enrichTrackTagsBatch,
+    executeLyricsPhase,
     __setRuntimeStateForTests: (
         nextState: Partial<{
             isRunning: boolean;
