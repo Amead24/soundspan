@@ -24,7 +24,7 @@ function makeTrack(id: string, overrides: Partial<MapTrack> = {}): MapTrack {
         albumId: "album-1",
         coverUrl: null,
         dominantMood: "neutral",
-        moodScore: 0,
+        moodHappy: 0,
         energy: 0.5,
         valence: 0.5,
         bpm: 120,

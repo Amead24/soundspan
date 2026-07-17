@@ -16,11 +16,11 @@ export interface MapTrack {
     albumId: string;
     coverUrl: string | null;
     dominantMood: string;
-    moodScore: number;
+    /** The one mood scalar the payload ships (travel-compass fallback);
+     * optional so the map renders against an older (v4) backend payload. */
+    moodHappy?: number | null;
     energy: number | null;
     valence: number | null;
-    /** Full per-mood scores (present in payload; unused by F1, kept for F2). */
-    moods?: Record<string, number>;
     /** v4 payload fields (weight mixer / x-ray) — optional so the map renders
      * against an older backend that doesn't send them yet. */
     bpm?: number | null;

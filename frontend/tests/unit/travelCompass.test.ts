@@ -17,7 +17,7 @@ function candidate(
     similarity: number,
     energy: number | null,
     valence: number | null,
-    moods?: Record<string, number> | null
+    moodHappy?: number | null
 ): CompassCandidate {
     return {
         id,
@@ -30,7 +30,7 @@ function candidate(
         distance: Math.max(0, 2 * (1 - similarity)),
         energy,
         valence,
-        moods: moods ?? null,
+        moodHappy: moodHappy ?? null,
     };
 }
 
@@ -45,7 +45,7 @@ function mapTrack(id: string, overrides: Partial<MapTrack> = {}): MapTrack {
         albumId: `al-${id}`,
         coverUrl: null,
         dominantMood: "moodHappy",
-        moodScore: 0.5,
+        moodHappy: 0.5,
         energy: 0.5,
         valence: 0.5,
         ...overrides,
@@ -55,7 +55,7 @@ function mapTrack(id: string, overrides: Partial<MapTrack> = {}): MapTrack {
 const origin: CompassOrigin = {
     energy: 0.5,
     valence: 0.5,
-    moods: { moodHappy: 0.4 },
+    moodHappy: 0.4,
 };
 
 test("thresholds are the documented deltas", () => {
@@ -89,9 +89,9 @@ test("energy-present direction filtering (calmer / more-energetic)", () => {
 });
 
 test("null valence falls back to moodHappy delta", () => {
-    const happyByMood = candidate("hm", 0.9, 0.5, null, { moodHappy: 0.7 }); // +0.3
-    const sadByMood = candidate("sm", 0.9, 0.5, null, { moodHappy: 0.2 }); // -0.2
-    const noSignal = candidate("ns", 0.9, 0.5, null, null); // no valence, no moods
+    const happyByMood = candidate("hm", 0.9, 0.5, null, 0.7); // +0.3
+    const sadByMood = candidate("sm", 0.9, 0.5, null, 0.2); // -0.2
+    const noSignal = candidate("ns", 0.9, 0.5, null, null); // no valence, no moodHappy
 
     assert.equal(matchesDirection(origin, happyByMood, "happier"), true);
     assert.equal(matchesDirection(origin, happyByMood, "sadder"), false);
@@ -147,31 +147,31 @@ test("compassNeighbors defaults to DEFAULT_COMPASS_COUNT", () => {
     assert.equal(compassNeighbors(origin, cands, "any").length, 8);
 });
 
-test("enrichFromMap fills only missing energy/valence/moods for on-map candidates", () => {
+test("enrichFromMap fills only missing energy/valence/moodHappy for on-map candidates", () => {
     const mapIndex = new Map<string, MapTrack>([
         [
             "onmap",
             mapTrack("onmap", {
                 energy: 0.8,
                 valence: 0.9,
-                moods: { moodHappy: 0.7 },
+                moodHappy: 0.7,
             }),
         ],
     ]);
 
     const missing = candidate("onmap", 0.5, null, null, null);
-    const present = candidate("onmap", 0.5, 0.1, 0.2, { moodHappy: 0.1 });
+    const present = candidate("onmap", 0.5, 0.1, 0.2, 0.1);
     const offMap = candidate("offmap", 0.5, null, null, null);
 
     const [enrichedMissing] = enrichFromMap([missing], mapIndex);
     assert.equal(enrichedMissing.energy, 0.8);
     assert.equal(enrichedMissing.valence, 0.9);
-    assert.deepEqual(enrichedMissing.moods, { moodHappy: 0.7 });
+    assert.equal(enrichedMissing.moodHappy, 0.7);
 
     const [enrichedPresent] = enrichFromMap([present], mapIndex);
     assert.equal(enrichedPresent.energy, 0.1, "own value is kept");
     assert.equal(enrichedPresent.valence, 0.2);
-    assert.deepEqual(enrichedPresent.moods, { moodHappy: 0.1 });
+    assert.equal(enrichedPresent.moodHappy, 0.1);
 
     const [untouched] = enrichFromMap([offMap], mapIndex);
     assert.equal(untouched.energy, null, "off-map candidate is not enriched");

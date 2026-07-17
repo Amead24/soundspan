@@ -88,7 +88,7 @@ function mapTrack(id: string) {
         albumId: `al-${id}`,
         coverUrl: null,
         dominantMood: "moodHappy",
-        moodScore: 0.5,
+        moodHappy: 0.5,
         energy: 0.5,
         valence: 0.5,
     };

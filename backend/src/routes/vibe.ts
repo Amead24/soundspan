@@ -17,7 +17,8 @@ import {
 } from "../services/similarityWeights";
 import {
     computeMapProjection,
-    getCachedProjection,
+    getCachedProjectionIds,
+    getCachedProjectionRaw,
 } from "../services/umapProjection";
 import {
     applyTrackPreferenceOrderBias,
@@ -150,6 +151,15 @@ async function buildTrackPreferenceScoreMapForUser(
  */
 router.get("/map", requireAuth, async (_req, res) => {
     try {
+        // Cache hit: send the cached JSON bytes as-is. Parsing and
+        // re-stringifying the multi-MB payload per request was the map's
+        // dominant serve cost (review finding A10).
+        const raw = await getCachedProjectionRaw();
+        if (raw !== null) {
+            res.type("application/json").send(raw);
+            return;
+        }
+
         const mapData = await computeMapProjection();
         res.json(mapData);
     } catch (error: any) {
@@ -919,8 +929,11 @@ router.get<{ trackId: string }>("/mixer/:trackId", requireAuth, async (req, res)
     try {
         const { trackId } = req.params;
 
-        const projection = await getCachedProjection();
-        if (!projection || projection.tracks.length === 0) {
+        // Slim ids companion, not the full projection: this runs on EVERY
+        // mixer request (cache hits included) and only needs id order +
+        // computedAt (review finding A10).
+        const projectionIds = await getCachedProjectionIds();
+        if (!projectionIds || projectionIds.ids.length === 0) {
             return res.status(409).json({
                 error: "No cached map projection",
                 stale: true,
@@ -928,7 +941,7 @@ router.get<{ trackId: string }>("/mixer/:trackId", requireAuth, async (req, res)
             });
         }
 
-        const cacheKey = `vibe:mixer:v1:${trackId}:${projection.computedAt}`;
+        const cacheKey = `vibe:mixer:v1:${trackId}:${projectionIds.computedAt}`;
         try {
             const cached = await redisClient.get(cacheKey);
             if (cached) {
@@ -946,7 +959,7 @@ router.get<{ trackId: string }>("/mixer/:trackId", requireAuth, async (req, res)
             });
         }
 
-        const ids = projection.tracks.map((track) => track.id);
+        const ids = projectionIds.ids;
 
         // Exact scans (no ANN, no ivfflat recall concerns): 15k × 512/768-D
         // dot products are tens of ms in Postgres. Deliberately NOT filtered
@@ -992,7 +1005,7 @@ router.get<{ trackId: string }>("/mixer/:trackId", requireAuth, async (req, res)
 
         const response = {
             seedId: trackId,
-            computedAt: projection.computedAt,
+            computedAt: projectionIds.computedAt,
             count: ids.length,
             clapSim: ids.map((id) => {
                 const sim = clapById.get(id);

@@ -3016,8 +3016,9 @@ class ApiClient {
                 albumId: string;
                 coverUrl: string | null;
                 dominantMood: string;
-                moodScore: number;
-                moods: Record<string, number>;
+                // v5 payload: the 7-float moods record + moodScore were
+                // dieted down to the one scalar any client consumed
+                moodHappy?: number | null;
                 energy: number | null;
                 valence: number | null;
                 // v4 payload fields (weight mixer / x-ray); optional so a

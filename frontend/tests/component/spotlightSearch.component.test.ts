@@ -65,7 +65,7 @@ function track(
     albumId: string;
     coverUrl: string | null;
     dominantMood: string;
-    moodScore: number;
+    moodHappy: number | null;
     energy: number | null;
     valence: number | null;
 } {
@@ -79,7 +79,7 @@ function track(
         albumId: `album-${id}`,
         coverUrl: null,
         dominantMood: "moodHappy",
-        moodScore: 0.5,
+        moodHappy: 0.5,
         energy: 0.5,
         valence: 0.5,
     };

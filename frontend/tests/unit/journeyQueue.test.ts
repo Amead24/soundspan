@@ -53,7 +53,7 @@ test("mapTrackToTrack turns a projected dot (string artist) into a Track", () =>
         albumId: "al-m1",
         coverUrl: "http://cover/m1.jpg",
         dominantMood: "moodHappy",
-        moodScore: 0.5,
+        moodHappy: 0.5,
         energy: 0.5,
         valence: 0.5,
     };

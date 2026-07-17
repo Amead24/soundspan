@@ -8,13 +8,17 @@ import { parseEmbedding } from "../utils/embedding";
 
 const MIN_TRACKS_FOR_UMAP = 5;
 const MAX_EMBEDDINGS = 15000;
-// v4: payload gained audio-feature + lyric-analysis fields (weight mixer /
-// x-ray). Old v3 keys orphan and expire via their 24h TTL — that is the
+// v5: payload diet — `moodScore` and the 7-float `moods` record dropped in
+// favour of a single `moodHappy` scalar (the only key any client read), and
+// x/y ship at 4dp (sub-pixel on any real screen). Undoes essentially all of
+// v4's growth. Old keys orphan and expire via their 24h TTL — that is the
 // whole invalidation story; never reuse a version once the shape changes.
-// (The v3-era `…:track_ids` companion SET is gone: it was written on every
-// compute but nothing anywhere read it — index-aligned consumers must use
-// the cached projection's ordered `tracks` array instead.)
-const CACHE_KEY = "vibe:map:v4:projection";
+// The `…:ids` companion (ORDERED, versioned by the shared computedAt —
+// unlike the deleted v3-era unordered `…:track_ids` SET) is written beside
+// the projection so index-aligned consumers (the mixer) can read ids +
+// computedAt without parsing the multi-MB projection JSON per request.
+const CACHE_KEY = "vibe:map:v5:projection";
+const IDS_CACHE_KEY = "vibe:map:v5:ids";
 const CACHE_TTL_SECONDS = 86400;
 const UMAP_TIMEOUT_MS = 15 * 60 * 1000;
 const UMAP_WARN_MS = 5 * 60 * 1000;
@@ -29,8 +33,8 @@ export interface VibeMapTrack {
     albumId: string;
     coverUrl: string | null;
     dominantMood: string;
-    moodScore: number;
-    moods: Record<string, number>;
+    /** The one mood scalar clients consume (travel compass fallback). */
+    moodHappy: number | null;
     energy: number | null;
     valence: number | null;
     // v4 fields (weight mixer / x-ray): audio features rounded to 3dp to
@@ -53,6 +57,18 @@ export interface VibeMapResponse {
     trackCount: number;
     sampled?: boolean;
     computedAt: string;
+}
+
+/**
+ * Slim companion payload for consumers that only need the projection's id
+ * order (the mixer): ids in EXACTLY the served `tracks` order, stamped with
+ * the same `computedAt` so staleness checks against the client's map payload
+ * keep working.
+ */
+export interface VibeMapIdsPayload {
+    computedAt: string;
+    trackCount: number;
+    ids: string[];
 }
 
 type TrackRow = {
@@ -120,25 +136,22 @@ function getDominantMood(
     return best;
 }
 
-function getMoodScores(track: Record<string, unknown>): Record<string, number> {
-    const moods: Record<string, number> = {};
-
-    for (const field of MOOD_FIELDS) {
-        const value = track[field] as number | null | undefined;
-        if (value != null) {
-            moods[field] = value;
-        }
-    }
-
-    return moods;
-}
-
 async function cacheResult(result: VibeMapResponse): Promise<void> {
     try {
         await redisClient.setEx(
             CACHE_KEY,
             CACHE_TTL_SECONDS,
             JSON.stringify(result)
+        );
+        const idsPayload: VibeMapIdsPayload = {
+            computedAt: result.computedAt,
+            trackCount: result.trackCount,
+            ids: result.tracks.map((track) => track.id),
+        };
+        await redisClient.setEx(
+            IDS_CACHE_KEY,
+            CACHE_TTL_SECONDS,
+            JSON.stringify(idsPayload)
         );
     } catch (error) {
         logger.warn(
@@ -152,6 +165,10 @@ function round3(value: number | null): number | null {
     return value == null ? null : Math.round(value * 1000) / 1000;
 }
 
+function round4(value: number): number {
+    return Math.round(value * 10000) / 10000;
+}
+
 function buildMapTrack(
     row: TrackRow,
     x: number,
@@ -161,16 +178,15 @@ function buildMapTrack(
 
     return {
         id: row.track_id,
-        x,
-        y,
+        x: round4(x),
+        y: round4(y),
         title: row.title,
         artist: row.artistName,
         artistId: row.artistId,
         albumId: row.albumId,
         coverUrl: row.coverUrl,
         dominantMood: dominant.mood,
-        moodScore: dominant.score,
-        moods: getMoodScores(row as Record<string, unknown>),
+        moodHappy: round3(row.moodHappy),
         energy: row.energy,
         valence: row.valence,
         bpm: round3(row.bpm),
@@ -386,13 +402,46 @@ async function doCompute(): Promise<VibeMapResponse> {
 }
 
 /**
- * Read the cached projection without triggering a compute. Consumers that
- * need index-alignment with the served map (the mixer endpoint) must use
- * THIS ordered `tracks` array.
+ * Read the cached projection without triggering a compute. Prefer
+ * getCachedProjectionIds() when only id order / computedAt is needed — this
+ * pays a multi-MB JSON.parse.
  */
 export async function getCachedProjection(): Promise<VibeMapResponse | null> {
     const cached = await redisClient.get(CACHE_KEY);
     return cached ? (JSON.parse(cached) as VibeMapResponse) : null;
+}
+
+/**
+ * Read the cached projection as its raw JSON string, for handlers that send
+ * it straight to the wire (`/map` cache hits skip parse + re-stringify).
+ */
+export async function getCachedProjectionRaw(): Promise<string | null> {
+    return redisClient.get(CACHE_KEY);
+}
+
+/**
+ * Read the slim ordered id list for the cached projection. Consumers that
+ * need index-alignment with the served map (the mixer endpoint) must use
+ * THIS id order. Falls back to deriving from the full projection when the
+ * slim key alone was evicted, so the mixer degrades to the old parse cost
+ * instead of 409ing until the 24h expiry. Never computes.
+ */
+export async function getCachedProjectionIds(): Promise<VibeMapIdsPayload | null> {
+    const cached = await redisClient.get(IDS_CACHE_KEY);
+    if (cached) {
+        return JSON.parse(cached) as VibeMapIdsPayload;
+    }
+
+    const projection = await getCachedProjection();
+    if (!projection) {
+        return null;
+    }
+
+    return {
+        computedAt: projection.computedAt,
+        trackCount: projection.trackCount,
+        ids: projection.tracks.map((track) => track.id),
+    };
 }
 
 export async function computeMapProjection(): Promise<VibeMapResponse> {

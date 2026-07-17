@@ -7,9 +7,9 @@
  * similarity. Unit-testable in isolation.
  *
  * The `/vibe/similar` payload carries `audioFeatures.{energy,valence}`, but
- * those can be null and it never carries the per-mood record. Candidates that
- * are present on the map are therefore enriched from the map projection (which
- * always has energy/valence + the `moods` record) via `enrichFromMap`.
+ * those can be null and it never carries `moodHappy`. Candidates that are
+ * present on the map are therefore enriched from the map projection (which
+ * always has energy/valence + the `moodHappy` scalar) via `enrichFromMap`.
  */
 
 import type { MapTrack } from "./types";
@@ -47,8 +47,8 @@ export interface VibeTrackRef {
 
 /**
  * A travel neighbour: a similar-track candidate carrying the features the
- * compass filters on. `energy`/`valence` may be null (unanalyzed) and `moods`
- * may be absent until enriched from the map.
+ * compass filters on. `energy`/`valence` may be null (unanalyzed) and
+ * `moodHappy` may be absent until enriched from the map.
  */
 export interface CompassCandidate extends VibeTrackRef {
     /** 0..1 hybrid similarity; higher = closer. Used for ranking. */
@@ -57,15 +57,15 @@ export interface CompassCandidate extends VibeTrackRef {
     distance: number;
     energy: number | null;
     valence: number | null;
-    /** Per-mood scores (from the map payload) used as the null-valence fallback. */
-    moods?: Record<string, number> | null;
+    /** moodHappy scalar (from the map payload) used as the null-valence fallback. */
+    moodHappy?: number | null;
     /** Groove/intensity features for the Travel explainability breakdown. */
     danceability?: number | null;
     arousal?: number | null;
 }
 
 /** The origin node the compass measures deltas against (a `MapTrack` satisfies this). */
-export type CompassOrigin = Pick<MapTrack, "energy" | "valence" | "moods">;
+export type CompassOrigin = Pick<MapTrack, "energy" | "valence" | "moodHappy">;
 
 function delta(current: number | null, candidate: number | null): number | null {
     if (current == null || candidate == null) return null;
@@ -76,8 +76,8 @@ function moodHappyDelta(
     current: CompassOrigin,
     candidate: CompassCandidate
 ): number | null {
-    const c = current.moods?.moodHappy;
-    const n = candidate.moods?.moodHappy;
+    const c = current.moodHappy;
+    const n = candidate.moodHappy;
     if (typeof c !== "number" || typeof n !== "number") return null;
     return n - c;
 }
@@ -122,10 +122,11 @@ export function matchesDirection(
 }
 
 /**
- * Fill each candidate's `energy`/`valence`/`moods` from the map projection when
- * the candidate is on the map and its own value is missing (null/undefined).
- * The map's features are authoritative for anything it plots, so this recovers
- * the deltas for candidates whose `/similar` audioFeatures came back null.
+ * Fill each candidate's `energy`/`valence`/`moodHappy` from the map projection
+ * when the candidate is on the map and its own value is missing
+ * (null/undefined). The map's features are authoritative for anything it
+ * plots, so this recovers the deltas for candidates whose `/similar`
+ * audioFeatures came back null.
  *
  * Pure: returns new candidate objects, input untouched.
  */
@@ -140,7 +141,7 @@ export function enrichFromMap(
             ...c,
             energy: c.energy ?? m.energy,
             valence: c.valence ?? m.valence,
-            moods: c.moods ?? m.moods ?? null,
+            moodHappy: c.moodHappy ?? m.moodHappy ?? null,
         };
     });
 }

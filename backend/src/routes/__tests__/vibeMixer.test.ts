@@ -51,6 +51,8 @@ jest.mock("../../utils/annQuery", () => ({
 jest.mock("../../services/umapProjection", () => ({
     computeMapProjection: jest.fn(),
     getCachedProjection: jest.fn(),
+    getCachedProjectionRaw: jest.fn(),
+    getCachedProjectionIds: jest.fn(),
 }));
 
 jest.mock("../../utils/embedding", () => ({
@@ -67,12 +69,12 @@ jest.mock("../../services/vibeVocabulary", () => ({
 import router from "../vibe";
 import { prisma } from "../../utils/db";
 import { redisClient } from "../../utils/redis";
-import { getCachedProjection } from "../../services/umapProjection";
+import { getCachedProjectionIds } from "../../services/umapProjection";
 
 const mockQueryRaw = prisma.$queryRaw as jest.Mock;
 const mockRedisGet = redisClient.get as jest.Mock;
 const mockRedisSetEx = redisClient.setEx as jest.Mock;
-const mockGetCachedProjection = getCachedProjection as jest.Mock;
+const mockGetCachedProjectionIds = getCachedProjectionIds as jest.Mock;
 
 function getHandler(path: string) {
     const layer = (router as any).stack.find(
@@ -98,9 +100,12 @@ function createRes() {
     return res;
 }
 
-function projection(ids: string[]) {
+// The mixer reads the slim ids companion key, never the full projection —
+// parsing the multi-MB projection JSON per request was the endpoint's
+// dominant cost (review finding A10).
+function idsPayload(ids: string[]) {
     return {
-        tracks: ids.map((id) => ({ id })),
+        ids,
         trackCount: ids.length,
         computedAt: "2026-07-16T12:00:00.000Z",
     };
@@ -120,7 +125,7 @@ describe("GET /api/vibe/mixer/:trackId", () => {
     });
 
     it("409s with stale:true when no projection is cached", async () => {
-        mockGetCachedProjection.mockResolvedValue(null);
+        mockGetCachedProjectionIds.mockResolvedValue(null);
 
         const res = createRes();
         await mixerHandler(makeReq(), res);
@@ -131,7 +136,7 @@ describe("GET /api/vibe/mixer/:trackId", () => {
     });
 
     it("404s when the seed track has no CLAP embedding", async () => {
-        mockGetCachedProjection.mockResolvedValue(projection(["a", "b"]));
+        mockGetCachedProjectionIds.mockResolvedValue(idsPayload(["a", "b"]));
         mockQueryRaw.mockResolvedValueOnce([]); // fetchTrackEmbedding
 
         const res = createRes();
@@ -145,7 +150,7 @@ describe("GET /api/vibe/mixer/:trackId", () => {
         // alignment. The scans are full-table (unfiltered), so both include a
         // row for a track OUTSIDE the projection — it must be ignored, never
         // shift alignment.
-        mockGetCachedProjection.mockResolvedValue(projection(["b", "a", "missing"]));
+        mockGetCachedProjectionIds.mockResolvedValue(idsPayload(["b", "a", "missing"]));
         mockQueryRaw
             .mockResolvedValueOnce([{ embedding: "[1,0]" }]) // seed CLAP embedding
             .mockResolvedValueOnce([
@@ -173,7 +178,7 @@ describe("GET /api/vibe/mixer/:trackId", () => {
     });
 
     it("null-fills the whole lyricSim array when the seed has no usable lyrics", async () => {
-        mockGetCachedProjection.mockResolvedValue(projection(["a"]));
+        mockGetCachedProjectionIds.mockResolvedValue(idsPayload(["a"]));
         mockQueryRaw
             .mockResolvedValueOnce([{ embedding: "[1,0]" }]) // seed CLAP
             .mockResolvedValueOnce([{ track_id: "a", sim: 0.8 }]) // clap scan
@@ -189,7 +194,7 @@ describe("GET /api/vibe/mixer/:trackId", () => {
     });
 
     it("serves the seed+computedAt-scoped cache when present", async () => {
-        mockGetCachedProjection.mockResolvedValue(projection(["a"]));
+        mockGetCachedProjectionIds.mockResolvedValue(idsPayload(["a"]));
         const cached = {
             seedId: "seed",
             computedAt: "2026-07-16T12:00:00.000Z",
@@ -210,7 +215,7 @@ describe("GET /api/vibe/mixer/:trackId", () => {
     });
 
     it("caches the computed response with a 1h TTL", async () => {
-        mockGetCachedProjection.mockResolvedValue(projection(["a"]));
+        mockGetCachedProjectionIds.mockResolvedValue(idsPayload(["a"]));
         mockQueryRaw
             .mockResolvedValueOnce([{ embedding: "[1,0]" }])
             .mockResolvedValueOnce([{ track_id: "a", sim: 0.7 }])

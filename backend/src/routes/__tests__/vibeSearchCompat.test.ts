@@ -61,6 +61,8 @@ jest.mock("../../utils/annQuery", () => ({
 
 jest.mock("../../services/umapProjection", () => ({
     computeMapProjection: jest.fn(),
+    getCachedProjectionRaw: jest.fn(),
+    getCachedProjectionIds: jest.fn(),
 }));
 
 jest.mock("../../utils/embedding", () => ({
@@ -86,7 +88,10 @@ import { prisma } from "../../utils/db";
 import { redisClient } from "../../utils/redis";
 import { findSimilarTracks } from "../../services/hybridSimilarity";
 import { runAnnQuery } from "../../utils/annQuery";
-import { computeMapProjection } from "../../services/umapProjection";
+import {
+    computeMapProjection,
+    getCachedProjectionRaw,
+} from "../../services/umapProjection";
 import {
     getVocabulary,
     expandQueryWithVocabulary,
@@ -104,6 +109,7 @@ const mockRedisDel = redisClient.del as jest.Mock;
 const mockFindSimilarTracks = findSimilarTracks as jest.Mock;
 const mockRunAnnQuery = runAnnQuery as jest.Mock;
 const mockComputeMapProjection = computeMapProjection as jest.Mock;
+const mockGetCachedProjectionRaw = getCachedProjectionRaw as jest.Mock;
 const mockGetVocabulary = getVocabulary as jest.Mock;
 const mockExpandQueryWithVocabulary = expandQueryWithVocabulary as jest.Mock;
 const mockRerankWithFeatures = rerankWithFeatures as jest.Mock;
@@ -132,12 +138,20 @@ function createRes() {
     const res: any = {
         statusCode: 200,
         body: undefined as unknown,
+        sentRaw: undefined as unknown,
         status: jest.fn(function (code: number) {
             res.statusCode = code;
             return res;
         }),
         json: jest.fn(function (payload: unknown) {
             res.body = payload;
+            return res;
+        }),
+        type: jest.fn(function () {
+            return res;
+        }),
+        send: jest.fn(function (payload: unknown) {
+            res.sentRaw = payload;
             return res;
         }),
     };
@@ -161,6 +175,7 @@ describe("vibe search transport compatibility", () => {
         mockLikedTrackFindMany.mockResolvedValue([]);
         mockDislikedEntityFindMany.mockResolvedValue([]);
         mockFindSimilarTracks.mockResolvedValue([]);
+        mockGetCachedProjectionRaw.mockResolvedValue(null);
         mockComputeMapProjection.mockResolvedValue({
             tracks: [],
             trackCount: 0,
@@ -188,8 +203,7 @@ describe("vibe search transport compatibility", () => {
                     albumId: "album-1",
                     coverUrl: null,
                     dominantMood: "moodHappy",
-                    moodScore: 0.9,
-                    moods: { moodHappy: 0.9 },
+                    moodHappy: 0.9,
                     energy: 0.8,
                     valence: 0.7,
                 },
@@ -227,6 +241,22 @@ describe("vibe search transport compatibility", () => {
         expect(errRes.body).toEqual({
             error: "Failed to compute map projection",
         });
+    });
+
+    it("serves a cached projection as the raw string without parsing or recomputing", async () => {
+        // A cache hit must not pay JSON.parse + re-stringify of the multi-MB
+        // payload (review finding A10): the raw cached bytes go straight out.
+        const raw = '{"tracks":[{"id":"track-1","x":0.25,"y":0.75}],"trackCount":1,"computedAt":"2026-03-14T12:00:00.000Z"}';
+        mockGetCachedProjectionRaw.mockResolvedValueOnce(raw);
+
+        const req = { user: { id: "user-1" } } as any;
+        const res = createRes();
+        await mapHandler(req, res);
+
+        expect(res.statusCode).toBe(200);
+        expect(res.sentRaw).toBe(raw);
+        expect(res.type).toHaveBeenCalledWith("application/json");
+        expect(mockComputeMapProjection).not.toHaveBeenCalled();
     });
 
     it("handles similar-track route success, empty, and error branches", async () => {

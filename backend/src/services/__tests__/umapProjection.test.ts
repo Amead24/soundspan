@@ -266,16 +266,14 @@ describe("computeMapProjection", () => {
                 x: expect.closeTo(0.8, 6),
                 y: expect.closeTo(0.5, 6),
                 dominantMood: "moodElectronic",
-                moodScore: 0.95,
-                moods: expect.objectContaining({ moodElectronic: 0.95 }),
+                moodHappy: 0.1,
             }),
             expect.objectContaining({
                 id: "track-2",
                 x: expect.closeTo(0.5, 6),
                 y: expect.closeTo(0.8, 6),
                 dominantMood: "neutral",
-                moodScore: 0,
-                moods: {},
+                moodHappy: null,
             }),
             expect.objectContaining({
                 id: "track-3",
@@ -290,14 +288,30 @@ describe("computeMapProjection", () => {
                 dominantMood: "moodAggressive",
             }),
         ]);
+        // v5 diet: the per-mood record and moodScore no longer ship
+        expect(result.tracks[0]).not.toHaveProperty("moods");
+        expect(result.tracks[0]).not.toHaveProperty("moodScore");
         expect(mockParseEmbedding).not.toHaveBeenCalled();
         expect(workers).toHaveLength(0);
         expect(mockRedisSetEx).toHaveBeenCalledWith(
-            "vibe:map:v4:projection",
+            "vibe:map:v5:projection",
             86400,
             expect.any(String)
         );
-        expect(mockRedisSetEx).toHaveBeenCalledTimes(1);
+        // The slim ids companion is written alongside the projection, aligned
+        // to the served tracks order (the mixer reads it instead of parsing
+        // the multi-MB projection).
+        const idsCall = mockRedisSetEx.mock.calls.find(
+            (call) => call[0] === "vibe:map:v5:ids"
+        );
+        expect(idsCall).toBeDefined();
+        expect(idsCall?.[1]).toBe(86400);
+        expect(JSON.parse(idsCall?.[2] as string)).toEqual({
+            computedAt: result.computedAt,
+            trackCount: 4,
+            ids: ["track-1", "track-2", "track-3", "track-4"],
+        });
+        expect(mockRedisSetEx).toHaveBeenCalledTimes(2);
     });
 
     it("carries v4 audio/lyric fields, 3dp-rounded, with the hasLyrics gate", async () => {
@@ -379,6 +393,56 @@ describe("computeMapProjection", () => {
         expect(mockQueryRaw).not.toHaveBeenCalled();
     });
 
+    it("getCachedProjectionRaw returns the cached JSON string untouched or null", async () => {
+        const { getCachedProjectionRaw } = loadModule();
+
+        mockRedisGet.mockResolvedValueOnce(null);
+        await expect(getCachedProjectionRaw()).resolves.toBeNull();
+
+        const raw = '{"tracks":[],"trackCount":0,"computedAt":"2026-07-16T00:00:00.000Z"}';
+        mockRedisGet.mockResolvedValueOnce(raw);
+        await expect(getCachedProjectionRaw()).resolves.toBe(raw);
+
+        expect(mockQueryRaw).not.toHaveBeenCalled();
+    });
+
+    it("getCachedProjectionIds prefers the slim key, derives from the projection as fallback, and never computes", async () => {
+        const { getCachedProjectionIds } = loadModule();
+
+        // Slim-key hit: one GET, no full-projection read
+        const slim = {
+            computedAt: "2026-07-16T00:00:00.000Z",
+            trackCount: 2,
+            ids: ["a", "b"],
+        };
+        mockRedisGet.mockResolvedValueOnce(JSON.stringify(slim));
+        await expect(getCachedProjectionIds()).resolves.toEqual(slim);
+        expect(mockRedisGet).toHaveBeenCalledTimes(1);
+        expect(mockRedisGet).toHaveBeenNthCalledWith(1, "vibe:map:v5:ids");
+
+        // Slim key evicted but the projection survives: derive from it so the
+        // mixer keeps working instead of 409ing until the 24h expiry.
+        mockRedisGet.mockResolvedValueOnce(null);
+        mockRedisGet.mockResolvedValueOnce(
+            JSON.stringify({
+                tracks: [{ id: "x" }, { id: "y" }, { id: "z" }],
+                trackCount: 3,
+                computedAt: "2026-07-16T01:00:00.000Z",
+            })
+        );
+        await expect(getCachedProjectionIds()).resolves.toEqual({
+            computedAt: "2026-07-16T01:00:00.000Z",
+            trackCount: 3,
+            ids: ["x", "y", "z"],
+        });
+
+        // Neither key: null (the mixer 409s, the map recomputes)
+        mockRedisGet.mockResolvedValue(null);
+        await expect(getCachedProjectionIds()).resolves.toBeNull();
+
+        expect(mockQueryRaw).not.toHaveBeenCalled();
+    });
+
     it("returns the projection even when Redis caching fails", async () => {
         mockQueryRaw.mockResolvedValueOnce(makeRows(4));
         mockRedisSetEx.mockImplementationOnce(async () => {
@@ -422,7 +486,9 @@ describe("computeMapProjection", () => {
                 expect.objectContaining({
                     id: "track-1",
                     x: 0,
-                    y: expect.closeTo(3 / 7, 6),
+                    // 3/7 = 0.428571… — coordinates ship rounded to 4dp
+                    // (sub-pixel on any real screen; ~0.6MB payload saved)
+                    y: 0.4286,
                     dominantMood: "moodHappy",
                 }),
                 expect.objectContaining({
@@ -454,11 +520,16 @@ describe("computeMapProjection", () => {
             execArgv: ["--import", "tsx"],
         });
         expect(mockRedisSetEx).toHaveBeenCalledWith(
-            "vibe:map:v4:projection",
+            "vibe:map:v5:projection",
             86400,
             expect.any(String)
         );
-        expect(mockRedisSetEx).toHaveBeenCalledTimes(1);
+        expect(mockRedisSetEx).toHaveBeenCalledWith(
+            "vibe:map:v5:ids",
+            86400,
+            expect.any(String)
+        );
+        expect(mockRedisSetEx).toHaveBeenCalledTimes(2);
     });
 
     it("times out the UMAP worker after fifteen minutes and terminates the worker", async () => {

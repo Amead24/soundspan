@@ -97,7 +97,7 @@ function neighbor(
     distance: number;
     energy: number | null;
     valence: number | null;
-    moods: Record<string, number> | null;
+    moodHappy: number | null;
     danceability: number | null;
     arousal: number | null;
 } {
@@ -110,7 +110,7 @@ function neighbor(
         distance: distanceForPercent(Math.round(similarity * 100)),
         energy: 0.5,
         valence: 0.5,
-        moods: null,
+        moodHappy: null,
         danceability: overrides.danceability ?? 0.6,
         arousal: overrides.arousal ?? 0.4,
     };
@@ -1039,7 +1039,7 @@ test("NeighborRow expansion renders the calibrated sentence and per-feature matc
         distance: 0.2,
         energy: 0.6,
         valence: 0.4,
-        moods: null,
+        moodHappy: null,
         danceability: 0.7,
         arousal: 0.3,
     };
@@ -1082,7 +1082,7 @@ test("NeighborRow collapsed (expanded=false) does not render the breakdown", asy
         distance: 0.2,
         energy: 0.6,
         valence: 0.4,
-        moods: null,
+        moodHappy: null,
         danceability: 0.7,
         arousal: 0.3,
     };

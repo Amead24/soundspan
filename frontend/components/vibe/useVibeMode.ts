@@ -457,7 +457,7 @@ export function useVibeMode({
                         valence: t.audioFeatures?.valence ?? null,
                         danceability: t.audioFeatures?.danceability ?? null,
                         arousal: t.audioFeatures?.arousal ?? null,
-                        moods: null,
+                        moodHappy: null,
                     })),
                 });
             })
