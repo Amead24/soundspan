@@ -13,6 +13,7 @@ import {
     isDefaultWeights,
     resolveUserWeights,
     similarityWeightsSchema,
+    splitAndNormalize,
 } from "../services/similarityWeights";
 import {
     computeMapProjection,
@@ -1024,6 +1025,264 @@ async function loadUserSimilarityWeights(userId: string | undefined) {
     });
     return resolveUserWeights(user?.similarityWeights);
 }
+
+type XrayRow = {
+    a_id: string; a_title: string; a_artist: string; a_album_id: string | null; a_cover_url: string | null;
+    a_energy: number | null; a_valence: number | null; a_bpm: number | null;
+    a_danceability: number | null; a_acousticness: number | null; a_instrumentalness: number | null;
+    a_key: string | null; a_key_scale: string | null;
+    a_sentiment: number | null; a_lexical: number | null; a_reading: number | null;
+    a_lyric_status: string | null; a_lyric_instrumental: boolean | null;
+    b_id: string; b_title: string; b_artist: string; b_album_id: string | null; b_cover_url: string | null;
+    b_energy: number | null; b_valence: number | null; b_bpm: number | null;
+    b_danceability: number | null; b_acousticness: number | null; b_instrumentalness: number | null;
+    b_key: string | null; b_key_scale: string | null;
+    b_sentiment: number | null; b_lexical: number | null; b_reading: number | null;
+    b_lyric_status: string | null; b_lyric_instrumental: boolean | null;
+    clap_sim: number | null;
+    lyric_sim: number | null;
+    bpm_sim: number;
+    key_sim: number;
+};
+
+// §core-math closeness (mirrors frontend simMath.ts and the scoring SQL)
+const xrayFeatureCloseness = (a: number | null, b: number | null) =>
+    1 - Math.abs((a ?? 0.5) - (b ?? 0.5));
+const xraySentimentCloseness = (a: number, b: number) => 1 - Math.abs(a - b) / 2;
+const xrayLexicalCloseness = (a: number, b: number) =>
+    1 - Math.abs(Math.min(a, 120) - Math.min(b, 120)) / 120;
+const xrayReadingCloseness = (a: number, b: number) =>
+    1 - Math.min(Math.abs(a - b), 12) / 12;
+
+function xrayLyricStatus(
+    status: string | null,
+    instrumental: boolean | null
+): "analyzed" | "instrumental" | "unknown" {
+    if (status === "completed" && instrumental !== true) return "analyzed";
+    if (status === "instrumental" || instrumental === true) return "instrumental";
+    return "unknown";
+}
+
+/**
+ * @openapi
+ * /api/vibe/xray:
+ *   get:
+ *     summary: Component-by-component comparison of two tracks
+ *     description: >
+ *       The "why do these two songs (not) match" breakdown: true CLAP cosine
+ *       similarity, each audio-feature similarity, key relationship inputs,
+ *       lyric similarities and scalar gaps, shared neighbors (under the
+ *       requester's weight mix), and an overall blended score. Machine-
+ *       readable — the client composes Camelot labels and verdict sentences.
+ *     tags: [Vibe]
+ *     security:
+ *       - sessionAuth: []
+ *       - apiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: a
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: b
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Full pairwise component breakdown
+ *       400:
+ *         description: Missing or identical track ids
+ *       404:
+ *         description: One or both tracks not found
+ *       401:
+ *         description: Not authenticated
+ */
+router.get("/xray", requireAuth, async (req, res) => {
+    try {
+        const a = typeof req.query.a === "string" ? req.query.a : "";
+        const b = typeof req.query.b === "string" ? req.query.b : "";
+        if (!a || !b) {
+            return res.status(400).json({ error: "Both a and b track ids are required" });
+        }
+        if (a === b) {
+            return res.status(400).json({ error: "Pick two different tracks to compare" });
+        }
+
+        const rows = await prisma.$queryRaw<XrayRow[]>`
+            WITH side_a AS (
+                SELECT t.id, t.title, ar.name as artist, t."albumId", al."coverUrl",
+                    t.energy, t.valence, t.bpm, t.danceability, t.acousticness,
+                    t.instrumentalness, t.key, t."keyScale",
+                    te.embedding as clap_embedding,
+                    tle.embedding as lyric_embedding,
+                    tl.sentiment, tl."lexicalDiversity", tl."readingLevel",
+                    tl."analysisStatus" as lyric_status,
+                    tl."isInstrumental" as lyric_instrumental
+                FROM "Track" t
+                JOIN "Album" al ON t."albumId" = al.id
+                JOIN "Artist" ar ON al."artistId" = ar.id
+                LEFT JOIN track_embeddings te ON te.track_id = t.id
+                LEFT JOIN track_lyric_embeddings tle ON tle.track_id = t.id
+                LEFT JOIN "TrackLyrics" tl ON tl."trackId" = t.id
+                WHERE t.id = ${a}
+            ),
+            side_b AS (
+                SELECT t.id, t.title, ar.name as artist, t."albumId", al."coverUrl",
+                    t.energy, t.valence, t.bpm, t.danceability, t.acousticness,
+                    t.instrumentalness, t.key, t."keyScale",
+                    te.embedding as clap_embedding,
+                    tle.embedding as lyric_embedding,
+                    tl.sentiment, tl."lexicalDiversity", tl."readingLevel",
+                    tl."analysisStatus" as lyric_status,
+                    tl."isInstrumental" as lyric_instrumental
+                FROM "Track" t
+                JOIN "Album" al ON t."albumId" = al.id
+                JOIN "Artist" ar ON al."artistId" = ar.id
+                LEFT JOIN track_embeddings te ON te.track_id = t.id
+                LEFT JOIN track_lyric_embeddings tle ON tle.track_id = t.id
+                LEFT JOIN "TrackLyrics" tl ON tl."trackId" = t.id
+                WHERE t.id = ${b}
+            )
+            SELECT
+                side_a.id as a_id, side_a.title as a_title, side_a.artist as a_artist,
+                side_a."albumId" as a_album_id, side_a."coverUrl" as a_cover_url,
+                side_a.energy as a_energy, side_a.valence as a_valence, side_a.bpm as a_bpm,
+                side_a.danceability as a_danceability, side_a.acousticness as a_acousticness,
+                side_a.instrumentalness as a_instrumentalness,
+                side_a.key as a_key, side_a."keyScale" as a_key_scale,
+                side_a.sentiment as a_sentiment, side_a."lexicalDiversity" as a_lexical,
+                side_a."readingLevel" as a_reading,
+                side_a.lyric_status as a_lyric_status, side_a.lyric_instrumental as a_lyric_instrumental,
+                side_b.id as b_id, side_b.title as b_title, side_b.artist as b_artist,
+                side_b."albumId" as b_album_id, side_b."coverUrl" as b_cover_url,
+                side_b.energy as b_energy, side_b.valence as b_valence, side_b.bpm as b_bpm,
+                side_b.danceability as b_danceability, side_b.acousticness as b_acousticness,
+                side_b.instrumentalness as b_instrumentalness,
+                side_b.key as b_key, side_b."keyScale" as b_key_scale,
+                side_b.sentiment as b_sentiment, side_b."lexicalDiversity" as b_lexical,
+                side_b."readingLevel" as b_reading,
+                side_b.lyric_status as b_lyric_status, side_b.lyric_instrumental as b_lyric_instrumental,
+                CASE WHEN side_a.clap_embedding IS NOT NULL AND side_b.clap_embedding IS NOT NULL
+                    THEN 1 - (side_a.clap_embedding <=> side_b.clap_embedding) END as clap_sim,
+                CASE WHEN side_a.lyric_embedding IS NOT NULL AND side_b.lyric_embedding IS NOT NULL
+                    THEN 1 - (side_a.lyric_embedding <=> side_b.lyric_embedding) END as lyric_sim,
+                bpm_similarity(side_a.bpm, side_b.bpm) as bpm_sim,
+                key_similarity(side_a.key, side_a."keyScale", side_b.key, side_b."keyScale") as key_sim
+            FROM side_a, side_b
+        `;
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: "One or both tracks not found" });
+        }
+        const row = rows[0];
+
+        const aLyricStatus = xrayLyricStatus(row.a_lyric_status, row.a_lyric_instrumental);
+        const bLyricStatus = xrayLyricStatus(row.b_lyric_status, row.b_lyric_instrumental);
+        const lyricsApply = aLyricStatus === "analyzed" && bLyricStatus === "analyzed";
+
+        const features = [
+            { key: "energy" as const, a: row.a_energy, b: row.b_energy, similarity: xrayFeatureCloseness(row.a_energy, row.b_energy) },
+            { key: "valence" as const, a: row.a_valence, b: row.b_valence, similarity: xrayFeatureCloseness(row.a_valence, row.b_valence) },
+            { key: "bpm" as const, a: row.a_bpm, b: row.b_bpm, similarity: row.bpm_sim },
+            { key: "danceability" as const, a: row.a_danceability, b: row.b_danceability, similarity: xrayFeatureCloseness(row.a_danceability, row.b_danceability) },
+            { key: "acousticness" as const, a: row.a_acousticness, b: row.b_acousticness, similarity: xrayFeatureCloseness(row.a_acousticness, row.b_acousticness) },
+            { key: "instrumentalness" as const, a: row.a_instrumentalness, b: row.b_instrumentalness, similarity: xrayFeatureCloseness(row.a_instrumentalness, row.b_instrumentalness) },
+        ];
+
+        // Overall = the same §blend the mixer/scoring use, under the
+        // requester's weights, so the headline number matches what the map
+        // and /similar would say about this pair.
+        const weights = await loadUserSimilarityWeights(req.user?.id);
+        const { norm, lyricSum } = splitAndNormalize(weights);
+        let num = 0;
+        let den = 0;
+        if (row.clap_sim != null) {
+            num += norm.clap * Math.max(0, row.clap_sim);
+            den += norm.clap;
+        }
+        num +=
+            norm.energy * features[0].similarity +
+            norm.valence * features[1].similarity +
+            norm.bpm * row.bpm_sim +
+            norm.danceability * features[3].similarity +
+            norm.acousticness * features[4].similarity +
+            norm.instrumentalness * features[5].similarity +
+            norm.key * row.key_sim;
+        den +=
+            norm.energy + norm.valence + norm.bpm + norm.danceability +
+            norm.acousticness + norm.instrumentalness + norm.key;
+        const sentiment =
+            lyricsApply && row.a_sentiment != null && row.b_sentiment != null
+                ? { a: row.a_sentiment, b: row.b_sentiment, similarity: xraySentimentCloseness(row.a_sentiment, row.b_sentiment) }
+                : null;
+        const lexical =
+            lyricsApply && row.a_lexical != null && row.b_lexical != null
+                ? { a: row.a_lexical, b: row.b_lexical, similarity: xrayLexicalCloseness(row.a_lexical, row.b_lexical) }
+                : null;
+        const reading =
+            lyricsApply && row.a_reading != null && row.b_reading != null
+                ? { a: row.a_reading, b: row.b_reading, similarity: xrayReadingCloseness(row.a_reading, row.b_reading) }
+                : null;
+        const semanticSimilarity = lyricsApply && row.lyric_sim != null ? Math.max(0, row.lyric_sim) : null;
+        if (lyricsApply && semanticSimilarity != null && sentiment) {
+            num +=
+                norm.lyricSemantic * semanticSimilarity +
+                norm.lyricSentiment * sentiment.similarity +
+                (lexical ? norm.lyricLexical * lexical.similarity : 0) +
+                (reading ? norm.lyricReading * reading.similarity : 0);
+            den += lyricSum;
+        }
+        const overallSimilarity = den > 0 ? num / den : 0;
+
+        // Shared neighbors under the same weights (each capped list is small;
+        // intersection preserves side-a ranking)
+        const [neighborsA, neighborsB] = await Promise.all([
+            findSimilarTracks(a, 25, weights),
+            findSimilarTracks(b, 25, weights),
+        ]);
+        const bIds = new Set(neighborsB.map((t) => t.id));
+        const sharedNeighbors = neighborsA
+            .filter((t) => bIds.has(t.id) && t.id !== a && t.id !== b)
+            .slice(0, 5)
+            .map((t) => ({
+                id: t.id,
+                title: t.title,
+                artist: t.artistName,
+                albumId: t.albumId ?? null,
+                coverUrl: t.albumCoverUrl ?? null,
+            }));
+
+        res.json({
+            a: { id: row.a_id, title: row.a_title, artist: row.a_artist, albumId: row.a_album_id, coverUrl: row.a_cover_url },
+            b: { id: row.b_id, title: row.b_title, artist: row.b_artist, albumId: row.b_album_id, coverUrl: row.b_cover_url },
+            overall: {
+                similarity: overallSimilarity,
+                weights: isDefaultWeights(weights) ? "default" : "custom",
+            },
+            clap: { available: row.clap_sim != null, similarity: row.clap_sim },
+            features,
+            keys: {
+                a: row.a_key ? { key: row.a_key, scale: row.a_key_scale } : null,
+                b: row.b_key ? { key: row.b_key, scale: row.b_key_scale } : null,
+                similarity: row.key_sim,
+            },
+            lyrics: {
+                aStatus: aLyricStatus,
+                bStatus: bLyricStatus,
+                semanticSimilarity,
+                sentiment,
+                lexical,
+                reading,
+            },
+            sharedNeighbors,
+        });
+    } catch (error) {
+        logger.error("Vibe xray error:", error);
+        res.status(500).json({ error: "Failed to compare tracks" });
+    }
+});
 
 /**
  * @openapi
