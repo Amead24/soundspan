@@ -111,8 +111,9 @@ WORKDIR /app/audio-analyzer-clap
 # above from the merged requirements-aio.lock — jointly resolved with the Essentia
 # analyzer deps into this one shared Python 3.11 site-packages (roadmap F50).
 
-# Copy CLAP analyzer script
+# Copy CLAP analyzer script (+ the lyric analysis worker that rides in it)
 COPY services/audio-analyzer-clap/analyzer.py /app/audio-analyzer-clap/
+COPY services/audio-analyzer-clap/lyric_analysis.py /app/audio-analyzer-clap/
 
 # Pre-download CLAP model (~2.35 GB / 2,352,471,003 bytes) during build to avoid runtime download
 # The analyzer expects the model at /app/models/music_audioset_epoch_15_esc_90.14.pt
@@ -132,6 +133,37 @@ RUN --mount=type=secret,id=hf_token \
     echo "fae3e9c087f2909c28a09dc31c8dfcdacbc42ba44c70e972b58c1bd1caf6dedd  /app/models/music_audioset_epoch_15_esc_90.14.pt" | sha256sum -c - && \
     echo "CLAP model downloaded successfully" && \
     ls -lh /app/models/music_audioset_epoch_15_esc_90.14.pt
+
+# Bake nomic-embed-text-v1.5 (lyric embeddings) into the image's HF cache at
+# pinned immutable repo commits (roadmap F38 discipline — never a movable
+# ref). TWO repos are required: the weights repo, and nomic-ai/nomic-bert-2048
+# hosting the trust_remote_code modeling module its config auto_map points at.
+# allow_patterns skips the ONNX variants (~1GB we never load). Then verify the
+# whole lyric-embedding path (remote-code module under the installed
+# transformers + a real 768-D unit-norm embed) at build time. HF_HOME must
+# match at build and runtime.
+ENV HF_HOME=/app/models/hf-cache
+RUN python3 -c "\
+from huggingface_hub import snapshot_download; \
+snapshot_download( \
+    'nomic-ai/nomic-embed-text-v1.5', \
+    revision='e9b6763023c676ca8431644204f50c2b100d9aab', \
+    allow_patterns=['*.json', '*.py', '*.txt', 'model.safetensors', '*.model'], \
+); \
+snapshot_download( \
+    'nomic-ai/nomic-bert-2048', \
+    revision='7710840340a098cfb869c4f65e87cf2b1b70caca', \
+    allow_patterns=['*.py', '*.json'], \
+); print('nomic model + remote-code repo downloaded')" && \
+    cd /app/audio-analyzer-clap && python3 -c "\
+from lyric_analysis import NomicEmbedder; \
+import math; \
+e = NomicEmbedder(); \
+v = e.embed('a quick smoke test of the lyric embedding path'); \
+assert len(v) == 768, f'expected 768 dims, got {len(v)}'; \
+norm = math.sqrt(sum(x * x for x in v)); \
+assert abs(norm - 1.0) < 1e-3, f'expected unit norm, got {norm}'; \
+print('nomic lyric embedding verified successfully')"
 
 # Create database readiness check script
 RUN cat > /app/wait-for-db.sh << 'EOF'

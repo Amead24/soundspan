@@ -875,6 +875,11 @@ def main():
     threads.append(control_thread)
     logger.info("Started control handler thread")
 
+    # Start lyric analysis workers (lyrics:analysis:queue; own lazy-loaded
+    # nomic-embed model with its own idle unload — see lyric_analysis.py)
+    from lyric_analysis import start_lyric_workers
+    threads.extend(start_lyric_workers(stop_event))
+
     # Main loop: monitor idle state and unload model when not needed
     idle_db = DatabaseConnection(DATABASE_URL)
     idle_db.connect()

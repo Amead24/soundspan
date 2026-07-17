@@ -439,6 +439,7 @@ services:
             NUM_WORKERS: ${CLAP_WORKERS:-2}
             THREADS_PER_WORKER: ${CLAP_THREADS_PER_WORKER:-1}
             MODEL_IDLE_TIMEOUT: ${CLAP_MODEL_IDLE_TIMEOUT:-300}
+            LYRIC_WORKERS: ${LYRIC_WORKERS:-1}
             INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-soundspan-internal-secret-change-me}
         volumes:
             - ${MUSIC_PATH:-./music}:/music:ro

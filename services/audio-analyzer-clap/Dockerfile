@@ -50,9 +50,45 @@ RUN --mount=type=secret,id=hf_token \
 # Verify model loads correctly
 RUN python -c "import laion_clap; model = laion_clap.CLAP_Module(enable_fusion=False, amodel='HTSAT-base'); model.load_ckpt('/app/models/music_audioset_epoch_15_esc_90.14.pt'); print('CLAP model verified successfully')"
 
+# Bake nomic-embed-text-v1.5 (lyric embeddings) into the image's HF cache at
+# pinned immutable repo commits (roadmap F38 discipline — never a movable
+# ref). Integrity comes from the pinned git revisions plus hf_hub's per-file
+# etag verification. TWO repos are required: the model weights repo, and
+# nomic-ai/nomic-bert-2048 which hosts the trust_remote_code modeling module
+# its config auto_map points at. allow_patterns skips the ONNX variants
+# (~1GB we never load). HF_HOME must match at build and runtime.
+ENV HF_HOME=/app/models/hf-cache
+RUN python -c "\
+from huggingface_hub import snapshot_download; \
+snapshot_download( \
+    'nomic-ai/nomic-embed-text-v1.5', \
+    revision='e9b6763023c676ca8431644204f50c2b100d9aab', \
+    allow_patterns=['*.json', '*.py', '*.txt', 'model.safetensors', '*.model'], \
+); \
+snapshot_download( \
+    'nomic-ai/nomic-bert-2048', \
+    revision='7710840340a098cfb869c4f65e87cf2b1b70caca', \
+    allow_patterns=['*.py', '*.json'], \
+); print('nomic model + remote-code repo downloaded')"
+
 # Copy application code
 COPY services/audio-analyzer-clap/analyzer.py /app/analyzer.py
+COPY services/audio-analyzer-clap/lyric_analysis.py /app/lyric_analysis.py
 COPY services/common /app/services/common
+
+# Verify the lyric embedding path end-to-end at build time (trust_remote_code
+# modeling module must be importable under the installed transformers, and a
+# real embed must produce a 768-D unit vector) — a compat break fails the
+# build here instead of crash-looping the container at runtime.
+RUN python -c "\
+from lyric_analysis import NomicEmbedder; \
+import math; \
+e = NomicEmbedder(); \
+v = e.embed('a quick smoke test of the lyric embedding path'); \
+assert len(v) == 768, f'expected 768 dims, got {len(v)}'; \
+norm = math.sqrt(sum(x * x for x in v)); \
+assert abs(norm - 1.0) < 1e-3, f'expected unit norm, got {norm}'; \
+print('nomic lyric embedding verified successfully')"
 
 # Create non-root user
 RUN useradd -m -u 1000 analyzer && \

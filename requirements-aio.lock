@@ -248,6 +248,7 @@ click==8.4.2 \
     --hash=sha256:e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76
     # via
     #   huggingface-hub
+    #   nltk
     #   wandb
 cryptography==49.0.0 \
     --hash=sha256:026ac7423e6fa66872d3bf889be5974507da3944f866f704fa200eadacd00001 \
@@ -327,6 +328,14 @@ decorator==5.3.1 \
     --hash=sha256:4cbcdd55a6efadb9dbea26b858f4fb3264567b52d69ca0d25b721b553f60ea82 \
     --hash=sha256:f47fe6fdbd2edd623ecfe36875d37aba411624e2670dd395dddae1358689bb3c
     # via librosa
+defusedxml==0.7.1 \
+    --hash=sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69 \
+    --hash=sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61
+    # via nltk
+einops==0.8.2 \
+    --hash=sha256:54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193 \
+    --hash=sha256:609da665570e5e265e27283aab09e7f279ade90c4f01bcfca111f3d3e13f2827
+    # via -r services/audio-analyzer-clap/requirements.txt
 essentia-tensorflow==2.1b6.dev1389 \
     --hash=sha256:1a9740b3edea4259e362c0718f102113b36e9034b2db5caa874c4b4a0395f785 \
     --hash=sha256:2a172f9eaf49a034e508ffc76d64c18f34e3a88944d721e8b00f7c1f56d89bd5 \
@@ -558,6 +567,7 @@ joblib==1.5.3 \
     --hash=sha256:8561a3269e6801106863fd0d6d84bb737be9e7631e33aaed3fb9ce5953688da3
     # via
     #   librosa
+    #   nltk
     #   scikit-learn
 keras==2.15.0 \
     --hash=sha256:2dcc6d2e30cf9c951064b63c1f4c404b966c59caf09e01f3549138ec8ee0dd1f \
@@ -823,6 +833,10 @@ networkx==3.6.1 \
     --hash=sha256:26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509 \
     --hash=sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762
     # via torch
+nltk==3.10.0 \
+    --hash=sha256:4fbac1d98203cbcd1b5d94a2877fb822300072d80604a5e7fae49d2c5f84e8c1 \
+    --hash=sha256:54ff84d4916d3ef127e8953bee0023f6a6b320b75d634a19e06ef056d3d244bf
+    # via textstat
 numba==0.66.0 \
     --hash=sha256:0999e3ee1b18c48e1fb51d11af35ef59852c7f4f50569c9550c25faef0616ad1 \
     --hash=sha256:2338cc0d43609fe448930848fd35a5bc688761b986f81b597a6f45cc0f8c9577 \
@@ -1394,6 +1408,10 @@ pygments==2.20.0 \
     --hash=sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f \
     --hash=sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176
     # via rich
+pyphen==0.17.2 \
+    --hash=sha256:3a07fb017cb2341e1d9ff31b8634efb1ae4dc4b130468c7c39dd3d32e7c3affd \
+    --hash=sha256:f60647a9c9b30ec6c59910097af82bc5dd2d36576b918e44148d8b07ef3b4aa3
+    # via textstat
 python-dateutil==2.9.0.post0 \
     --hash=sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3 \
     --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
@@ -1605,6 +1623,7 @@ regex==2026.7.10 \
     --hash=sha256:fe7ff456c22725c9d9017f7a2a7df2b51af6df77314176760b22e2d05278e181
     # via
     #   laion-clap
+    #   nltk
     #   transformers
 requests==2.34.2 \
     --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0 \
@@ -1614,6 +1633,7 @@ requests==2.34.2 \
     #   pooch
     #   requests-oauthlib
     #   tensorboard
+    #   vadersentiment
     #   wandb
 requests-oauthlib==2.0.0 \
     --hash=sha256:7dd8a5c40426b779b0868c404bdef9768deccf22749cde15852df527e6269b36 \
@@ -1753,6 +1773,7 @@ setuptools==83.0.0 \
     # via
     #   tensorboard
     #   tensorflow
+    #   textstat
     #   torch
 shellingham==1.5.4 \
     --hash=sha256:7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686 \
@@ -1867,6 +1888,10 @@ termcolor==3.3.0 \
     --hash=sha256:348871ca648ec6a9a983a13ab626c0acce02f515b9e1983332b17af7979521c5 \
     --hash=sha256:cf642efadaf0a8ebbbf4bc7a31cec2f9b5f21a9f726f4ccbb08192c9c26f43a5
     # via tensorflow
+textstat==0.7.13 \
+    --hash=sha256:04b1ec995d1e8b2e628759497e6b23204a9ec91dcd652447d8cbba9478f25471 \
+    --hash=sha256:a88d1da76287cd27ca4ce7bcba1ebaf2890544a5f0bb6a5758fa84cef3bceccb
+    # via -r services/audio-analyzer-clap/requirements.txt
 threadpoolctl==3.6.0 \
     --hash=sha256:43a0b8fd5a2928500110039e43a5eed8480b918967083ea48dc3ab9f13c4a7fb \
     --hash=sha256:8ab8b4aa3491d812b623328249fab5302a68d2d71745c8a4c719a2fcaba9f44e
@@ -1991,6 +2016,7 @@ tqdm==4.68.4 \
     # via
     #   huggingface-hub
     #   laion-clap
+    #   nltk
     #   transformers
 transformers==5.13.1 \
     --hash=sha256:1e2452d6778a7482158df5d5dacf6bf775d5b2fdcfce33caaf7f6b0e5f3e3397 \
@@ -2041,6 +2067,10 @@ urllib3==2.7.0 \
     # via
     #   requests
     #   sentry-sdk
+vadersentiment==3.3.2 \
+    --hash=sha256:3bf1d243b98b1afad575b9f22bc2cb1e212b94ff89ca74f8a23a588d024ea311 \
+    --hash=sha256:5d7c06e027fc8b99238edb0d53d970cf97066ef97654009890b83703849632f9
+    # via -r services/audio-analyzer-clap/requirements.txt
 wandb==0.28.0 \
     --hash=sha256:325b2d0bd88be6eda5db10542499bad3710927f2569c81a84dc5eeaffc76825c \
     --hash=sha256:6dbcba12ab168aa37561f2f32dcdef8713495fc25fa7d30fdc9bfb37989694dd \

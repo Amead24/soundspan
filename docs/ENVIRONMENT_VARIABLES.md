@@ -191,6 +191,8 @@ Experimental feature note:
 | `CLAP_WORKERS` | compose host variable mapping to `audio-analyzer-clap:NUM_WORKERS` | Optional | `2` | Parallel CLAP workers. |
 | `CLAP_THREADS_PER_WORKER` | compose host variable mapping to `audio-analyzer-clap:THREADS_PER_WORKER` | Optional | `1` | CPU threads per CLAP worker. |
 | `CLAP_MODEL_IDLE_TIMEOUT` | compose host variable mapping to `audio-analyzer-clap:MODEL_IDLE_TIMEOUT` | Optional | `300` | Idle timeout before unloading CLAP model (seconds). |
+| `LYRIC_WORKERS` | `audio-analyzer-clap` (compose passes the host variable through under the same name) | Optional | `1` | Parallel lyric analysis workers (nomic-embed + lyric scalars) riding in the CLAP sidecar. |
+| `HF_HOME` | `audio-analyzer-clap` (baked as an image ENV, not a compose knob) | Optional | `/app/models/hf-cache` | Hugging Face cache holding the baked-in nomic-embed model + its remote-code repo; must match between build and runtime. |
 | `TEXT_EMBED_GROUP` | `audio-analyzer-clap` | Optional | `clap:text:embed:group` | Redis stream consumer group for text embedding requests. |
 | `TEXT_EMBED_RESPONSE_TTL_SECONDS` | `audio-analyzer-clap` | Optional | `120` | TTL for text embedding responses in Redis. |
 | `TEXT_EMBED_CLAIM_IDLE_MS` | `audio-analyzer-clap` | Optional | `60000` | Idle time before pending text-embed messages can be claimed. |
