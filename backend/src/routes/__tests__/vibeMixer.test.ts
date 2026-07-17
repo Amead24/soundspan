@@ -141,16 +141,23 @@ describe("GET /api/vibe/mixer/:trackId", () => {
     });
 
     it("returns arrays index-aligned to the projection order with nulls for holes", async () => {
-        // Projection order deliberately differs from row order to prove alignment
+        // Projection order deliberately differs from row order to prove
+        // alignment. The scans are full-table (unfiltered), so both include a
+        // row for a track OUTSIDE the projection — it must be ignored, never
+        // shift alignment.
         mockGetCachedProjection.mockResolvedValue(projection(["b", "a", "missing"]));
         mockQueryRaw
             .mockResolvedValueOnce([{ embedding: "[1,0]" }]) // seed CLAP embedding
             .mockResolvedValueOnce([
                 { track_id: "a", sim: 0.91234567 },
+                { track_id: "not-on-the-map", sim: 0.99 },
                 { track_id: "b", sim: 0.5 },
-            ]) // clap scan (unordered)
+            ]) // clap scan (unordered, whole table)
             .mockResolvedValueOnce([{ embedding: "[0,1]" }]) // seed lyric embedding (lyric_ok)
-            .mockResolvedValueOnce([{ track_id: "a", sim: 0.25 }]); // lyric scan
+            .mockResolvedValueOnce([
+                { track_id: "a", sim: 0.25 },
+                { track_id: "not-on-the-map", sim: 0.75 },
+            ]); // lyric scan (whole table)
 
         const res = createRes();
         await mixerHandler(makeReq(), res);

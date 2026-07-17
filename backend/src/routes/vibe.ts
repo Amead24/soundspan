@@ -949,11 +949,15 @@ router.get<{ trackId: string }>("/mixer/:trackId", requireAuth, async (req, res)
         const ids = projection.tracks.map((track) => track.id);
 
         // Exact scans (no ANN, no ivfflat recall concerns): 15k × 512/768-D
-        // dot products are tens of ms in Postgres.
+        // dot products are tens of ms in Postgres. Deliberately NOT filtered
+        // to the projection's ids: a `= ANY(<15k ids>)` bind ships ~400KB of
+        // parameters and probes the PK index per id (measured 237ms vs 45ms
+        // for the plain scan on the same corpus). Scanning every embedding and
+        // aligning through the id maps below yields an identical response —
+        // rows for tracks outside the projection simply never get read.
         const clapRows = await prisma.$queryRaw<{ track_id: string; sim: number }[]>`
             SELECT track_id, 1 - (embedding <=> ${seedEmbedding}::vector) as sim
             FROM track_embeddings
-            WHERE track_id = ANY(${ids}::text[])
         `;
 
         // Lyric similarity only when the seed itself is lyric-analyzed and
@@ -976,8 +980,7 @@ router.get<{ trackId: string }>("/mixer/:trackId", requireAuth, async (req, res)
                 SELECT tle.track_id, 1 - (tle.embedding <=> ${seedLyricEmbedding}::vector) as sim
                 FROM track_lyric_embeddings tle
                 JOIN "TrackLyrics" tl ON tl."trackId" = tle.track_id
-                WHERE tle.track_id = ANY(${ids}::text[])
-                    AND tl."analysisStatus" = 'completed'
+                WHERE tl."analysisStatus" = 'completed'
                     AND tl."isInstrumental" = false
             `;
         }
