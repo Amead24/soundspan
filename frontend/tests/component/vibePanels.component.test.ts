@@ -413,7 +413,7 @@ test("NowPlayingCard shows the playing track's title, artist and pause control",
                 id: "t1",
                 title: "Playing Title",
                 artist: { name: "Playing Artist" },
-                album: { coverArt: null },
+                album: {},
             },
             isPlaying: true,
             onMapPresent: true,
@@ -441,7 +441,7 @@ test("NowPlayingCard disables fly-to when the track isn't on the map", async () 
                 id: "t9",
                 title: "Off Map Song",
                 artist: { name: "Ghost" },
-                album: { coverArt: null },
+                album: {},
             },
             isPlaying: false,
             onMapPresent: false,
@@ -458,13 +458,50 @@ test("NowPlayingCard disables fly-to when the track isn't on the map", async () 
     assert.doesNotMatch(html, /Find on map/);
 });
 
+test("NowPlayingCard renders the resolved coverUrl, never a raw cover ID", async () => {
+    const NowPlayingCard = await nowPlayingCard();
+    const base = {
+        track: {
+            id: "t1",
+            title: "Playing Title",
+            artist: { name: "Playing Artist" },
+            album: {},
+        },
+        isPlaying: true,
+        onMapPresent: false,
+        moodColor: null,
+        onFlyTo: noop,
+        onTogglePlay: noop,
+    };
+
+    // The connected wrapper resolves album.coverArt (a cover ID like
+    // "native:<id>.jpg") through api.getCoverArtUrl and passes the result —
+    // the card renders exactly what it's given.
+    const withCover = renderToStaticMarkup(
+        React.createElement(NowPlayingCard, {
+            ...base,
+            coverUrl: "/api/library/cover-art/native:abc.jpg?size=100",
+        })
+    );
+    assert.match(
+        withCover,
+        /src="\/api\/library\/cover-art\/native:abc\.jpg\?size=100"/
+    );
+
+    // No resolved URL → the mood-tinted icon fallback, not a broken img.
+    const withoutCover = renderToStaticMarkup(
+        React.createElement(NowPlayingCard, base)
+    );
+    assert.doesNotMatch(withoutCover, /<img/);
+});
+
 test("NowPlayingCard shows skip-next only when a next queue item exists", async () => {
     const NowPlayingCard = await nowPlayingCard();
     const track = {
         id: "t1",
         title: "Playing Title",
         artist: { name: "Playing Artist" },
-        album: { coverArt: null },
+        album: {},
     };
     const base = {
         track,
@@ -510,7 +547,7 @@ test("NowPlayingCard renders a progress strip sized from currentTime/duration", 
                 id: "t1",
                 title: "Playing Title",
                 artist: { name: "Playing Artist" },
-                album: { coverArt: null },
+                album: {},
             },
             isPlaying: true,
             onMapPresent: true,
@@ -538,7 +575,7 @@ test("NowPlayingCard hides the progress strip when duration is 0/unknown", async
             id: "t1",
             title: "Playing Title",
             artist: { name: "Playing Artist" },
-            album: { coverArt: null },
+            album: {},
         },
         isPlaying: true,
         onMapPresent: true,
@@ -631,7 +668,7 @@ test("NowPlayingCard renders the likeSlot content when provided", async () => {
                 id: "t1",
                 title: "Playing Title",
                 artist: { name: "Playing Artist" },
-                album: { coverArt: null },
+                album: {},
             },
             isPlaying: true,
             onMapPresent: true,
@@ -656,7 +693,7 @@ test("NowPlayingCard renders no like control when likeSlot is omitted", async ()
                 id: "t1",
                 title: "Playing Title",
                 artist: { name: "Playing Artist" },
-                album: { coverArt: null },
+                album: {},
             },
             isPlaying: true,
             onMapPresent: true,

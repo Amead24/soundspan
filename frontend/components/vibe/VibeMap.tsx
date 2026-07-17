@@ -233,9 +233,15 @@ function NowPlayingConnected({
         typeof currentIndex === "number" &&
         currentIndex >= 0 &&
         currentIndex < (queue?.length ?? 0) - 1;
+    // album.coverArt is a cover ID ("native:<id>.jpg"), not a URL — resolve
+    // it exactly like the mini player does (useMediaInfo's idiom).
+    const coverUrl = track?.album?.coverArt
+        ? api.getCoverArtUrl(track.album.coverArt, 100)
+        : null;
     return (
         <NowPlayingCard
             track={track}
+            coverUrl={coverUrl}
             isPlaying={isPlaying}
             onMapPresent={onMapPresent}
             moodColor={moodColor}
@@ -1413,7 +1419,10 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
                     <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-xl px-3 py-2 shadow-lg inline-flex items-center gap-2 max-w-[260px]">
                         {hoveredTrack.coverUrl && (
                             <img
-                                src={hoveredTrack.coverUrl}
+                                // The payload's coverUrl is a cover ID
+                                // (e.g. "native:<id>.jpg"), not a servable
+                                // URL — resolve it like every player surface.
+                                src={api.getCoverArtUrl(hoveredTrack.coverUrl, 80)}
                                 alt=""
                                 loading="lazy"
                                 className="w-10 h-10 rounded object-cover flex-shrink-0"

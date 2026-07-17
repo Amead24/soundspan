@@ -27,12 +27,19 @@ export interface NowPlayingCardTrack {
     id: string;
     title: string;
     artist?: { name?: string | null; id?: string | null } | null;
-    album?: { coverArt?: string | null; id?: string | null } | null;
+    /** id feeds the album link; cover art arrives pre-resolved via the
+     *  `coverUrl` prop (album.coverArt is an ID the card can't render). */
+    album?: { id?: string | null } | null;
 }
 
 export interface NowPlayingCardProps {
     /** The currently-playing track (audio Track shape). Renders nothing if null. */
     track: NowPlayingCardTrack | null;
+    /** Resolved, servable cover URL (`api.getCoverArtUrl(...)`), supplied by
+     *  the connected wrapper — `track.album.coverArt` is a cover ID like
+     *  "native:<id>.jpg", NOT a URL, so the card must never render it raw.
+     *  Null/omitted falls back to the mood-tinted icon. */
+    coverUrl?: string | null;
     isPlaying: boolean;
     /** Whether this track has a dot on the current map sample. */
     onMapPresent: boolean;
@@ -64,6 +71,7 @@ const DEFAULT_COLOR = VIBE_ACCENTS.edge;
 
 export function NowPlayingCard({
     track,
+    coverUrl,
     isPlaying,
     onMapPresent,
     moodColor,
@@ -75,7 +83,7 @@ export function NowPlayingCard({
     likeSlot,
 }: NowPlayingCardProps) {
     if (!track) return null;
-    const cover = track.album?.coverArt ?? null;
+    const cover = coverUrl ?? null;
     const color = moodColor ?? DEFAULT_COLOR;
     const artist = track.artist?.name ?? "";
     const albumId = track.album?.id ?? "";
