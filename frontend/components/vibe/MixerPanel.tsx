@@ -15,7 +15,11 @@ import type { MixerState } from "./useMixer";
 import type { MapTrack } from "./types";
 import type { MixerComponent } from "./vibeMixer";
 import { DIMENSION_COPY } from "./vibeCopy";
-import { VIBE_PANEL_CLASS } from "./TravelPanel";
+import {
+    PANEL_CLOSE_CLASS,
+    VIBE_PANEL_CLASS,
+    VIBE_PANEL_STYLE,
+} from "./TravelPanel";
 
 const AUDIO_GROUP: MixerComponent[] = [
     "clap",
@@ -94,7 +98,14 @@ export function MixerPanel({
     };
 
     return (
-        <div className={VIBE_PANEL_CLASS} data-testid="mixer-panel">
+        // VIBE_PANEL_STYLE must ride along with VIBE_PANEL_CLASS: it carries
+        // the bottom anchor that makes the below-sm layout an actual bottom
+        // sheet and lifts it above the mobile mini player (--vibe-binset).
+        <div
+            className={VIBE_PANEL_CLASS}
+            style={VIBE_PANEL_STYLE}
+            data-testid="mixer-panel"
+        >
             <div className="flex items-center justify-between gap-2 mb-2">
                 <h3 className="text-sm font-semibold text-white">
                     Similarity mixer
@@ -104,7 +115,8 @@ export function MixerPanel({
                         type="button"
                         onClick={mixer.resetWeights}
                         title="Reset all sliders to the defaults"
-                        className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-white/10"
+                        aria-label="Reset all sliders to the defaults"
+                        className="inline-flex items-center justify-center w-10 h-10 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
                     >
                         <RotateCcw className="w-4 h-4" />
                     </button>
@@ -112,7 +124,7 @@ export function MixerPanel({
                         type="button"
                         onClick={onClose}
                         aria-label="Close mixer"
-                        className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-white/10"
+                        className={PANEL_CLOSE_CLASS}
                     >
                         <X className="w-4 h-4" />
                     </button>
@@ -146,6 +158,7 @@ export function MixerPanel({
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         placeholder="Pick a seed track…"
+                        aria-label="Pick a seed track"
                         className="w-full rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-400/60"
                     />
                     {matches.length > 0 && (

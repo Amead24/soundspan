@@ -18,7 +18,11 @@ import { camelotOf } from "./simMath";
 import type { MapTrack, XrayResponse } from "./types";
 import { buildVerdict, formatVerdict } from "./verdict";
 import { DIMENSION_COPY, VERDICT_TEMPLATES } from "./vibeCopy";
-import { VIBE_PANEL_CLASS } from "./TravelPanel";
+import {
+    PANEL_CLOSE_CLASS,
+    VIBE_PANEL_CLASS,
+    VIBE_PANEL_STYLE,
+} from "./TravelPanel";
 
 export interface XrayPanelProps {
     tracks: MapTrack[];
@@ -209,7 +213,14 @@ export function XrayPanel({
     const camelotB = xray?.keys.b ? camelotOf(xray.keys.b.key, xray.keys.b.scale) : null;
 
     return (
-        <div className={VIBE_PANEL_CLASS} data-testid="xray-panel">
+        // VIBE_PANEL_STYLE must ride along with VIBE_PANEL_CLASS: it carries
+        // the bottom anchor that makes the below-sm layout an actual bottom
+        // sheet and lifts it above the mobile mini player (--vibe-binset).
+        <div
+            className={VIBE_PANEL_CLASS}
+            style={VIBE_PANEL_STYLE}
+            data-testid="xray-panel"
+        >
             <div className="flex items-center justify-between gap-2 mb-2">
                 <h3 className="flex items-center gap-1.5 text-sm font-semibold text-white">
                     <ArrowLeftRight className="w-4 h-4 text-indigo-300" />
@@ -219,7 +230,7 @@ export function XrayPanel({
                     type="button"
                     onClick={onClose}
                     aria-label="Close x-ray"
-                    className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-white/10"
+                    className={PANEL_CLOSE_CLASS}
                 >
                     <X className="w-4 h-4" />
                 </button>
