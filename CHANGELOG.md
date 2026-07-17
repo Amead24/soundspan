@@ -71,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The vibe map's two `role="radio"` groups (the mixer's force mode, the trail-mode picker) now implement the keyboard semantics their announced role promises: roving tabindex (the group is one Tab stop) with arrow keys moving both selection and focus, wrapping at the ends, skipping disabled options, plus Home/End — previously every option was a separate Tab stop and arrow keys did nothing, contradicting what screen readers tell users about radio groups. The navigation math is a pure module (`radioGroupNav.ts`) shared by both groups.
 - The animated player UI (the mini/overlay/full-player shell) no longer
   re-renders 4×/second during playback — smoother UI with less battery drain and
   jank on mobile. The player render root now subscribes to the granular playback

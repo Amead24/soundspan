@@ -10,6 +10,13 @@
  */
 
 import {
+    DIMENSION_META,
+    MIXER_COMPONENTS,
+    SCALAR_DIMENSION_KEYS,
+    type MixerComponent,
+    type ScalarDimensionKey,
+} from "./dimensions";
+import {
     bpmSimilarity,
     featureCloseness,
     keySimilarity,
@@ -19,22 +26,10 @@ import {
 } from "./simMath";
 import type { MapTrack } from "./types";
 
-export const MIXER_COMPONENTS = [
-    "clap",
-    "lyricSemantic",
-    "lyricSentiment",
-    "lyricLexical",
-    "lyricReading",
-    "energy",
-    "valence",
-    "bpm",
-    "danceability",
-    "acousticness",
-    "instrumentalness",
-    "key",
-] as const;
-
-export type MixerComponent = (typeof MIXER_COMPONENTS)[number];
+// The component list + type live in the dimension registry (dimensions.ts);
+// re-exported here so the many existing import sites stay stable.
+export { MIXER_COMPONENTS };
+export type { MixerComponent };
 export type MixerWeights = Record<MixerComponent, number>;
 
 /** Must equal backend DEFAULT_SIMILARITY_WEIGHTS. */
@@ -54,18 +49,12 @@ export const DEFAULT_WEIGHTS: MixerWeights = {
 };
 
 /** One-time packed scalar columns; NaN = missing. Index-aligned to the map
- * `tracks` array (the same order the mixer endpoint's arrays use). */
+ * `tracks` array (the same order the mixer endpoint's arrays use). One
+ * column per registry dimension with a scalar accessor — a new scalar
+ * dimension packs automatically once registered in dimensions.ts. */
 export interface PackedScalars {
     length: number;
-    energy: Float32Array;
-    valence: Float32Array;
-    bpm: Float32Array;
-    danceability: Float32Array;
-    acousticness: Float32Array;
-    instrumentalness: Float32Array;
-    sentiment: Float32Array;
-    lexicalDiversity: Float32Array;
-    readingLevel: Float32Array;
+    scalars: Record<ScalarDimensionKey, Float32Array>;
     /** 1 when lyric analysis completed and not instrumental. */
     hasLyrics: Uint8Array;
     /** Raw key strings kept for keySimilarity (string compare is cheap
@@ -92,17 +81,13 @@ export function packTrackScalars(tracks: MapTrack[]): PackedScalars {
         keys[i] = tracks[i].key ?? null;
         keyScales[i] = tracks[i].keyScale ?? null;
     }
+    const scalars = {} as Record<ScalarDimensionKey, Float32Array>;
+    for (const key of SCALAR_DIMENSION_KEYS) {
+        scalars[key] = packColumn(tracks, DIMENSION_META[key].scalar);
+    }
     return {
         length: tracks.length,
-        energy: packColumn(tracks, (t) => t.energy),
-        valence: packColumn(tracks, (t) => t.valence),
-        bpm: packColumn(tracks, (t) => t.bpm),
-        danceability: packColumn(tracks, (t) => t.danceability),
-        acousticness: packColumn(tracks, (t) => t.acousticness),
-        instrumentalness: packColumn(tracks, (t) => t.instrumentalness),
-        sentiment: packColumn(tracks, (t) => t.sentiment),
-        lexicalDiversity: packColumn(tracks, (t) => t.lexicalDiversity),
-        readingLevel: packColumn(tracks, (t) => t.readingLevel),
+        scalars,
         hasLyrics,
         keys,
         keyScales,
@@ -134,15 +119,27 @@ export function computeScores(
     out: Float32Array
 ): Float32Array {
     const n = packed.length;
-    const sEnergy = nanToNull(packed.energy[seedIndex]);
-    const sValence = nanToNull(packed.valence[seedIndex]);
-    const sBpm = nanToNull(packed.bpm[seedIndex]);
-    const sDance = nanToNull(packed.danceability[seedIndex]);
-    const sAcoustic = nanToNull(packed.acousticness[seedIndex]);
-    const sInstr = nanToNull(packed.instrumentalness[seedIndex]);
-    const sSent = packed.sentiment[seedIndex];
-    const sLex = packed.lexicalDiversity[seedIndex];
-    const sRead = packed.readingLevel[seedIndex];
+    // Hoist the packed columns once — the loop below is the perf contract
+    // (zero allocation, flat array reads) and stays hand-written on purpose;
+    // the dimension registry only feeds the packing, never this blend.
+    const cEnergy = packed.scalars.energy;
+    const cValence = packed.scalars.valence;
+    const cBpm = packed.scalars.bpm;
+    const cDance = packed.scalars.danceability;
+    const cAcoustic = packed.scalars.acousticness;
+    const cInstr = packed.scalars.instrumentalness;
+    const cSent = packed.scalars.lyricSentiment;
+    const cLex = packed.scalars.lyricLexical;
+    const cRead = packed.scalars.lyricReading;
+    const sEnergy = nanToNull(cEnergy[seedIndex]);
+    const sValence = nanToNull(cValence[seedIndex]);
+    const sBpm = nanToNull(cBpm[seedIndex]);
+    const sDance = nanToNull(cDance[seedIndex]);
+    const sAcoustic = nanToNull(cAcoustic[seedIndex]);
+    const sInstr = nanToNull(cInstr[seedIndex]);
+    const sSent = cSent[seedIndex];
+    const sLex = cLex[seedIndex];
+    const sRead = cRead[seedIndex];
     const sKey = packed.keys[seedIndex];
     const sScale = packed.keyScales[seedIndex];
 
@@ -164,12 +161,12 @@ export function computeScores(
         }
 
         num +=
-            w.energy * featureCloseness(nanToNull(packed.energy[i]), sEnergy) +
-            w.valence * featureCloseness(nanToNull(packed.valence[i]), sValence) +
-            w.bpm * bpmSimilarity(nanToNull(packed.bpm[i]), sBpm) +
-            w.danceability * featureCloseness(nanToNull(packed.danceability[i]), sDance) +
-            w.acousticness * featureCloseness(nanToNull(packed.acousticness[i]), sAcoustic) +
-            w.instrumentalness * featureCloseness(nanToNull(packed.instrumentalness[i]), sInstr) +
+            w.energy * featureCloseness(nanToNull(cEnergy[i]), sEnergy) +
+            w.valence * featureCloseness(nanToNull(cValence[i]), sValence) +
+            w.bpm * bpmSimilarity(nanToNull(cBpm[i]), sBpm) +
+            w.danceability * featureCloseness(nanToNull(cDance[i]), sDance) +
+            w.acousticness * featureCloseness(nanToNull(cAcoustic[i]), sAcoustic) +
+            w.instrumentalness * featureCloseness(nanToNull(cInstr[i]), sInstr) +
             w.key * keySimilarity(packed.keys[i], packed.keyScales[i], sKey, sScale);
         den += audioFeatureWeight;
 
@@ -178,14 +175,14 @@ export function computeScores(
             let lyricScore = w.lyricSemantic * Math.max(0, lyric);
             // Scalar gates ride the same mask; guard NaN individually since
             // an older analysis version might miss one column.
-            if (!Number.isNaN(packed.sentiment[i]) && !Number.isNaN(sSent)) {
-                lyricScore += w.lyricSentiment * sentimentCloseness(packed.sentiment[i], sSent);
+            if (!Number.isNaN(cSent[i]) && !Number.isNaN(sSent)) {
+                lyricScore += w.lyricSentiment * sentimentCloseness(cSent[i], sSent);
             }
-            if (!Number.isNaN(packed.lexicalDiversity[i]) && !Number.isNaN(sLex)) {
-                lyricScore += w.lyricLexical * lexicalCloseness(packed.lexicalDiversity[i], sLex);
+            if (!Number.isNaN(cLex[i]) && !Number.isNaN(sLex)) {
+                lyricScore += w.lyricLexical * lexicalCloseness(cLex[i], sLex);
             }
-            if (!Number.isNaN(packed.readingLevel[i]) && !Number.isNaN(sRead)) {
-                lyricScore += w.lyricReading * readingCloseness(packed.readingLevel[i], sRead);
+            if (!Number.isNaN(cRead[i]) && !Number.isNaN(sRead)) {
+                lyricScore += w.lyricReading * readingCloseness(cRead[i], sRead);
             }
             num += lyricScore;
             den += lyricWeight;

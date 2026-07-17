@@ -13,6 +13,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeftRight, Loader2, Music2 } from "lucide-react";
 import { api } from "@/lib/api";
+import {
+    DIMENSION_META,
+    MIXER_COMPONENTS,
+    XRAY_GAP_BAR_KEYS,
+    type MixerComponent,
+} from "./dimensions";
 import { VibePanel } from "./panelChrome";
 import { camelotOf } from "./simMath";
 import { TrackSearchPicker, type TrackSearchShortcut } from "./TrackSearchPicker";
@@ -108,14 +114,14 @@ function GapBar({ a, b }: { a: number | null; b: number | null }) {
     );
 }
 
-const FEATURE_LABEL: Record<string, string> = {
-    energy: DIMENSION_COPY.energy.label,
-    valence: DIMENSION_COPY.valence.label,
-    bpm: DIMENSION_COPY.bpm.label,
-    danceability: DIMENSION_COPY.danceability.label,
-    acousticness: DIMENSION_COPY.acousticness.label,
-    instrumentalness: DIMENSION_COPY.instrumentalness.label,
-};
+// Row kinds + labels derive from the dimension registry: a new dimension
+// registered with xray: "gap-bar" renders here with zero panel edits.
+const FEATURE_LABEL: Record<string, string> = Object.fromEntries(
+    MIXER_COMPONENTS.map((k) => [k, DIMENSION_COPY[k].label])
+);
+const XRAY_BPM_KEY = MIXER_COMPONENTS.find(
+    (k) => DIMENSION_META[k].xray === "bpm"
+);
 
 export function XrayPanel({
     tracks,
@@ -240,7 +246,9 @@ export function XrayPanel({
                         </p>
                         <div className="space-y-2">
                             {xray.features
-                                .filter((f) => f.key !== "bpm")
+                                .filter((f) =>
+                                    XRAY_GAP_BAR_KEYS.has(f.key as MixerComponent)
+                                )
                                 .map((f) => (
                                     <div key={f.key}>
                                         <span className="flex items-center justify-between text-xs text-gray-300 mb-0.5">
@@ -254,7 +262,7 @@ export function XrayPanel({
                                 ))}
                             {(() => {
                                 const bpm = xray.features.find(
-                                    (f) => f.key === "bpm"
+                                    (f) => f.key === XRAY_BPM_KEY
                                 );
                                 if (!bpm) return null;
                                 return (

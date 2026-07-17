@@ -20,18 +20,15 @@ import {
  * executed for real by frontend/tests/unit/vibeMixer.test.ts.
  */
 
-function readVibeMixerSource(): string {
-    const mixerPath = path.resolve(
-        __dirname,
-        "../../../frontend/components/vibe/vibeMixer.ts"
-    );
-    if (!fs.existsSync(mixerPath)) {
+function readFrontendSource(relPath: string): string {
+    const absPath = path.resolve(__dirname, "../../../frontend", relPath);
+    if (!fs.existsSync(absPath)) {
         throw new Error(
-            `frontend/components/vibe/vibeMixer.ts not found at ${mixerPath} — ` +
-                "if the mixer module moved, update this contract test's path"
+            `frontend/${relPath} not found at ${absPath} — ` +
+                "if the module moved, update this contract test's path"
         );
     }
-    return fs.readFileSync(mixerPath, "utf8");
+    return fs.readFileSync(absPath, "utf8");
 }
 
 function extractBlock(source: string, startMarker: string): string {
@@ -52,9 +49,10 @@ function extractBlock(source: string, startMarker: string): string {
 }
 
 describe("frontend weight-mixer ↔ backend similarity-weights contract", () => {
-    const source = readVibeMixerSource();
-
     it("MIXER_COMPONENTS matches SIMILARITY_COMPONENTS exactly, in order", () => {
+        // The canonical frontend list lives in the dimension registry
+        // (components/vibe/dimensions.ts); vibeMixer re-exports it.
+        const source = readFrontendSource("components/vibe/dimensions.ts");
         const block = extractBlock(source, "export const MIXER_COMPONENTS = [");
         const frontendComponents = [...block.matchAll(/"([^"]+)"/g)].map(
             (m) => m[1]
@@ -63,6 +61,7 @@ describe("frontend weight-mixer ↔ backend similarity-weights contract", () => 
     });
 
     it("DEFAULT_WEIGHTS matches DEFAULT_SIMILARITY_WEIGHTS value-for-value", () => {
+        const source = readFrontendSource("components/vibe/vibeMixer.ts");
         const block = extractBlock(
             source,
             "export const DEFAULT_WEIGHTS: MixerWeights = {"

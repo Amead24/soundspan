@@ -57,6 +57,7 @@ import {
 } from "lucide-react";
 import { Fragment } from "react";
 import type { LayoutMode } from "./mapLayout";
+import { radioTargetFor, rovingTabIndex } from "./radioGroupNav";
 import type { TrailMode } from "./useSessionTrail";
 import { FILTERABLE_MOODS, VIBE_ACCENTS, getMoodColor, moodLabel } from "./types";
 import { ABOUT_DIMENSIONS_INTRO, DIMENSION_COPY } from "./vibeCopy";
@@ -67,6 +68,9 @@ const TRAIL_MODE_OPTIONS: readonly { mode: TrailMode; label: string }[] = [
     { mode: "fade", label: "Fade" },
     { mode: "off", label: "Off" },
 ];
+const TRAIL_MODES: readonly TrailMode[] = TRAIL_MODE_OPTIONS.map(
+    (o) => o.mode
+);
 
 export interface ViewControlsProps {
     onZoomIn: () => void;
@@ -438,7 +442,27 @@ export function ViewControls({
                                     type="button"
                                     role="radio"
                                     aria-checked={trailMode === mode}
+                                    tabIndex={rovingTabIndex(mode, trailMode)}
                                     onClick={() => onSetTrailMode(mode)}
+                                    onKeyDown={(e) => {
+                                        // Roving tabindex (ARIA radio
+                                        // pattern): arrows move selection
+                                        // AND focus.
+                                        const target = radioTargetFor(
+                                            e.key,
+                                            TRAIL_MODES,
+                                            trailMode
+                                        );
+                                        if (!target) return;
+                                        e.preventDefault();
+                                        onSetTrailMode(target);
+                                        const group = e.currentTarget.closest(
+                                            '[role="radiogroup"]'
+                                        );
+                                        group
+                                            ?.querySelectorAll<HTMLElement>('[role="radio"]')
+                                            [TRAIL_MODES.indexOf(target)]?.focus();
+                                    }}
                                     className={`flex-1 py-1 text-xs transition-colors ${
                                         trailMode === mode
                                             ? "bg-indigo-500/40 text-white"

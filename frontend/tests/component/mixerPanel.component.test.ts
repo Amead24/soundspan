@@ -217,6 +217,48 @@ test("force radios: disabled without scores, active with; strength slider report
     await mounted.unmount();
 });
 
+test("force radios rove: one Tab stop, arrows move selection, disabled skipped", async () => {
+    // With scores: arrows from "off" select the next enabled mode.
+    let mounted = await mountPanel(
+        mixerState({
+            seedId: "t1",
+            seedIndex: 0,
+            seedTrack: tracks[0],
+            scores: new Float32Array([1, 0.5, 0.2]),
+            forceMode: "off",
+        })
+    );
+    let radios = Array.from(
+        mounted.container.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+    );
+    // Roving tabindex: exactly the checked option is the Tab stop.
+    assert.deepEqual(
+        radios.map((r) => r.tabIndex),
+        [0, -1, -1]
+    );
+    await mounted.act(async () =>
+        radios[0].dispatchEvent(
+            new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })
+        )
+    );
+    assert.deepEqual(calls.setForceMode, ["attract"]);
+    await mounted.unmount();
+
+    // Without scores: attract/repel are disabled, so arrows go nowhere.
+    calls.setForceMode.length = 0;
+    mounted = await mountPanel(mixerState({ forceMode: "off" }));
+    radios = Array.from(
+        mounted.container.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+    );
+    await mounted.act(async () =>
+        radios[0].dispatchEvent(
+            new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })
+        )
+    );
+    assert.deepEqual(calls.setForceMode, []);
+    await mounted.unmount();
+});
+
 test("ranked rows fly to the track; close button closes", async () => {
     const state = mixerState({
         seedId: "t1",

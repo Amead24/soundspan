@@ -9,29 +9,19 @@
  */
 
 import { Loader2, LocateFixed, Music2, RotateCcw } from "lucide-react";
+import {
+    AUDIO_DIMENSION_KEYS,
+    LYRIC_DIMENSION_KEYS,
+} from "./dimensions";
 import { VibePanel } from "./panelChrome";
+import { radioTargetFor, rovingTabIndex } from "./radioGroupNav";
 import { TrackSearchPicker } from "./TrackSearchPicker";
 import type { MixerState } from "./useMixer";
 import type { MapTrack } from "./types";
 import type { MixerComponent } from "./vibeMixer";
 import { DIMENSION_COPY } from "./vibeCopy";
 
-const AUDIO_GROUP: MixerComponent[] = [
-    "clap",
-    "energy",
-    "valence",
-    "bpm",
-    "danceability",
-    "acousticness",
-    "instrumentalness",
-    "key",
-];
-const LYRIC_GROUP: MixerComponent[] = [
-    "lyricSemantic",
-    "lyricSentiment",
-    "lyricLexical",
-    "lyricReading",
-];
+const FORCE_MODES = ["off", "attract", "repel"] as const;
 
 export interface MixerPanelProps {
     mixer: MixerState;
@@ -154,7 +144,7 @@ export function MixerPanel({
                     <p className="text-[11px] uppercase tracking-wide text-gray-500">
                         Audio
                     </p>
-                    {AUDIO_GROUP.map((key) => (
+                    {AUDIO_DIMENSION_KEYS.map((key) => (
                         <WeightSlider
                             key={key}
                             componentKey={key}
@@ -173,7 +163,7 @@ export function MixerPanel({
                             {mixer.lyricCoverage.total} songs
                         </span>
                     </p>
-                    {LYRIC_GROUP.map((key) => (
+                    {LYRIC_DIMENSION_KEYS.map((key) => (
                         <WeightSlider
                             key={key}
                             componentKey={key}
@@ -193,14 +183,34 @@ export function MixerPanel({
                         aria-label="Force mode"
                         className="grid grid-cols-3 gap-1"
                     >
-                        {(["off", "attract", "repel"] as const).map((mode) => (
+                        {FORCE_MODES.map((mode) => (
                             <button
                                 key={mode}
                                 type="button"
                                 role="radio"
                                 aria-checked={mixer.forceMode === mode}
+                                tabIndex={rovingTabIndex(mode, mixer.forceMode)}
                                 disabled={mode !== "off" && !mixer.scores}
                                 onClick={() => mixer.setForceMode(mode)}
+                                onKeyDown={(e) => {
+                                    // Roving tabindex: arrows move selection
+                                    // AND focus, per the ARIA radio pattern.
+                                    const target = radioTargetFor(
+                                        e.key,
+                                        FORCE_MODES,
+                                        mixer.forceMode,
+                                        (m) => m !== "off" && !mixer.scores
+                                    );
+                                    if (!target) return;
+                                    e.preventDefault();
+                                    mixer.setForceMode(target);
+                                    const group = e.currentTarget.closest(
+                                        '[role="radiogroup"]'
+                                    );
+                                    group
+                                        ?.querySelectorAll<HTMLElement>('[role="radio"]')
+                                        [FORCE_MODES.indexOf(target)]?.focus();
+                                }}
                                 className={
                                     "rounded-md py-1 text-xs capitalize border " +
                                     (mixer.forceMode === mode
