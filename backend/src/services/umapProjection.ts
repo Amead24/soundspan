@@ -8,8 +8,11 @@ import { parseEmbedding } from "../utils/embedding";
 
 const MIN_TRACKS_FOR_UMAP = 5;
 const MAX_EMBEDDINGS = 15000;
-const CACHE_KEY = "vibe:map:v3:projection";
-const TRACK_IDS_KEY = "vibe:map:v3:track_ids";
+// v4: payload gained audio-feature + lyric-analysis fields (weight mixer /
+// x-ray). Old v3 keys orphan and expire via their 24h TTL — that is the
+// whole invalidation story; never reuse a version once the shape changes.
+const CACHE_KEY = "vibe:map:v4:projection";
+const TRACK_IDS_KEY = "vibe:map:v4:track_ids";
 const CACHE_TTL_SECONDS = 86400;
 const UMAP_TIMEOUT_MS = 15 * 60 * 1000;
 const UMAP_WARN_MS = 5 * 60 * 1000;
@@ -28,6 +31,18 @@ export interface VibeMapTrack {
     moods: Record<string, number>;
     energy: number | null;
     valence: number | null;
+    // v4 fields (weight mixer / x-ray): audio features rounded to 3dp to
+    // bound payload growth, plus lyric-analysis scalars where analyzed.
+    bpm: number | null;
+    danceability: number | null;
+    acousticness: number | null;
+    key: string | null;
+    keyScale: string | null;
+    sentiment: number | null;
+    lexicalDiversity: number | null;
+    readingLevel: number | null;
+    /** true only when lyric analysis completed and the track isn't instrumental */
+    hasLyrics: boolean;
 }
 
 export interface VibeMapResponse {
@@ -53,6 +68,16 @@ type TrackRow = {
     moodParty: number | null;
     moodAcoustic: number | null;
     moodElectronic: number | null;
+    bpm: number | null;
+    danceability: number | null;
+    acousticness: number | null;
+    key: string | null;
+    keyScale: string | null;
+    lyricSentiment: number | null;
+    lyricLexicalDiversity: number | null;
+    lyricReadingLevel: number | null;
+    lyricsAnalysisStatus: string | null;
+    lyricsInstrumental: boolean | null;
 };
 
 const MOOD_FIELDS = [
@@ -125,6 +150,10 @@ async function cacheResult(
     }
 }
 
+function round3(value: number | null): number | null {
+    return value == null ? null : Math.round(value * 1000) / 1000;
+}
+
 function buildMapTrack(
     row: TrackRow,
     x: number,
@@ -146,6 +175,17 @@ function buildMapTrack(
         moods: getMoodScores(row as Record<string, unknown>),
         energy: row.energy,
         valence: row.valence,
+        bpm: round3(row.bpm),
+        danceability: round3(row.danceability),
+        acousticness: round3(row.acousticness),
+        key: row.key,
+        keyScale: row.keyScale,
+        sentiment: round3(row.lyricSentiment),
+        lexicalDiversity: round3(row.lyricLexicalDiversity),
+        readingLevel: round3(row.lyricReadingLevel),
+        hasLyrics:
+            row.lyricsAnalysisStatus === "completed" &&
+            row.lyricsInstrumental !== true,
     };
 }
 
@@ -268,11 +308,22 @@ async function doCompute(): Promise<VibeMapResponse> {
             t."moodParty",
             t."moodAcoustic",
             t."moodElectronic",
+            t.bpm,
+            t.danceability,
+            t.acousticness,
+            t.key,
+            t."keyScale",
+            tl.sentiment as "lyricSentiment",
+            tl."lexicalDiversity" as "lyricLexicalDiversity",
+            tl."readingLevel" as "lyricReadingLevel",
+            tl."analysisStatus" as "lyricsAnalysisStatus",
+            tl."isInstrumental" as "lyricsInstrumental",
             te.embedding::text as embedding
         FROM track_embeddings te
         JOIN "Track" t ON te.track_id = t.id
         JOIN "Album" a ON t."albumId" = a.id
         JOIN "Artist" ar ON a."artistId" = ar.id
+        LEFT JOIN "TrackLyrics" tl ON tl."trackId" = t.id
         ORDER BY RANDOM()
         LIMIT ${MAX_EMBEDDINGS}
     `;
@@ -338,6 +389,16 @@ async function doCompute(): Promise<VibeMapResponse> {
     );
 
     return result;
+}
+
+/**
+ * Read the cached projection without triggering a compute. Consumers that
+ * need index-alignment with the served map (the mixer endpoint) must use
+ * THIS ordered `tracks` array — the TRACK_IDS_KEY Redis SET is unordered.
+ */
+export async function getCachedProjection(): Promise<VibeMapResponse | null> {
+    const cached = await redisClient.get(CACHE_KEY);
+    return cached ? (JSON.parse(cached) as VibeMapResponse) : null;
 }
 
 export async function computeMapProjection(): Promise<VibeMapResponse> {

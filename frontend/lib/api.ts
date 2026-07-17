@@ -3020,6 +3020,17 @@ class ApiClient {
                 moods: Record<string, number>;
                 energy: number | null;
                 valence: number | null;
+                // v4 payload fields (weight mixer / x-ray); optional so a
+                // client deployed ahead of the backend degrades gracefully
+                bpm?: number | null;
+                danceability?: number | null;
+                acousticness?: number | null;
+                key?: string | null;
+                keyScale?: string | null;
+                sentiment?: number | null;
+                lexicalDiversity?: number | null;
+                readingLevel?: number | null;
+                hasLyrics?: boolean;
             }>;
             trackCount: number;
             computedAt: string;

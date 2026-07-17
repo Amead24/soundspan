@@ -24,6 +24,16 @@ type QueryRow = {
     moodParty: number | null;
     moodAcoustic: number | null;
     moodElectronic: number | null;
+    bpm: number | null;
+    danceability: number | null;
+    acousticness: number | null;
+    key: string | null;
+    keyScale: string | null;
+    lyricSentiment: number | null;
+    lyricLexicalDiversity: number | null;
+    lyricReadingLevel: number | null;
+    lyricsAnalysisStatus: string | null;
+    lyricsInstrumental: boolean | null;
     embedding: string;
 };
 
@@ -130,6 +140,16 @@ function makeRow(index: number, overrides: Partial<QueryRow> = {}): QueryRow {
         moodParty: 0.5,
         moodAcoustic: 0.6,
         moodElectronic: 0.7,
+        bpm: 120,
+        danceability: 0.5,
+        acousticness: 0.4,
+        key: "C",
+        keyScale: "major",
+        lyricSentiment: null,
+        lyricLexicalDiversity: null,
+        lyricReadingLevel: null,
+        lyricsAnalysisStatus: null,
+        lyricsInstrumental: null,
         embedding: `[${index},${index + 1},${index + 2}]`,
         ...overrides,
     };
@@ -288,19 +308,97 @@ describe("computeMapProjection", () => {
         expect(mockParseEmbedding).not.toHaveBeenCalled();
         expect(workers).toHaveLength(0);
         expect(pipeline.setEx).toHaveBeenCalledWith(
-            "vibe:map:v3:projection",
+            "vibe:map:v4:projection",
             86400,
             expect.any(String)
         );
-        expect(pipeline.del).toHaveBeenCalledWith("vibe:map:v3:track_ids");
-        expect(pipeline.sAdd).toHaveBeenCalledWith("vibe:map:v3:track_ids", [
+        expect(pipeline.del).toHaveBeenCalledWith("vibe:map:v4:track_ids");
+        expect(pipeline.sAdd).toHaveBeenCalledWith("vibe:map:v4:track_ids", [
             "track-1",
             "track-2",
             "track-3",
             "track-4",
         ]);
-        expect(pipeline.expire).toHaveBeenCalledWith("vibe:map:v3:track_ids", 86400);
+        expect(pipeline.expire).toHaveBeenCalledWith("vibe:map:v4:track_ids", 86400);
         expect(pipeline.exec).toHaveBeenCalledTimes(1);
+    });
+
+    it("carries v4 audio/lyric fields, 3dp-rounded, with the hasLyrics gate", async () => {
+        mockQueryRaw.mockResolvedValueOnce([
+            // Fully-analyzed track with lyric scalars
+            makeRow(1, {
+                bpm: 128.4567,
+                danceability: 0.87654,
+                acousticness: 0.12345,
+                key: "A",
+                keyScale: "minor",
+                lyricSentiment: -0.54321,
+                lyricLexicalDiversity: 88.7777,
+                lyricReadingLevel: 5.4321,
+                lyricsAnalysisStatus: "completed",
+                lyricsInstrumental: false,
+            }),
+            // Instrumental: analysis "completed" fields absent, must not claim lyrics
+            makeRow(2, {
+                lyricsAnalysisStatus: "instrumental",
+                lyricsInstrumental: true,
+            }),
+            // No TrackLyrics row at all (LEFT JOIN nulls)
+            makeRow(3, {
+                bpm: null,
+                key: null,
+                keyScale: null,
+            }),
+            makeRow(4),
+        ]);
+
+        const { computeMapProjection } = loadModule();
+        const result = await computeMapProjection();
+
+        const [analyzed, instrumental, bare] = result.tracks;
+        expect(analyzed).toEqual(
+            expect.objectContaining({
+                id: "track-1",
+                bpm: 128.457,
+                danceability: 0.877,
+                acousticness: 0.123,
+                key: "A",
+                keyScale: "minor",
+                sentiment: -0.543,
+                lexicalDiversity: 88.778,
+                readingLevel: 5.432,
+                hasLyrics: true,
+            })
+        );
+        expect(instrumental).toEqual(
+            expect.objectContaining({
+                id: "track-2",
+                hasLyrics: false,
+                sentiment: null,
+            })
+        );
+        expect(bare).toEqual(
+            expect.objectContaining({
+                id: "track-3",
+                bpm: null,
+                key: null,
+                sentiment: null,
+                hasLyrics: false,
+            })
+        );
+    });
+
+    it("getCachedProjection returns the parsed cache or null without computing", async () => {
+        const { getCachedProjection } = loadModule();
+
+        mockRedisGet.mockResolvedValueOnce(null);
+        await expect(getCachedProjection()).resolves.toBeNull();
+
+        const cached = { tracks: [], trackCount: 0, computedAt: "2026-07-16T00:00:00.000Z" };
+        mockRedisGet.mockResolvedValueOnce(JSON.stringify(cached));
+        await expect(getCachedProjection()).resolves.toEqual(cached);
+
+        expect(mockQueryRaw).not.toHaveBeenCalled();
     });
 
     it("returns the projection even when Redis caching fails", async () => {
@@ -378,11 +476,11 @@ describe("computeMapProjection", () => {
             execArgv: ["--import", "tsx"],
         });
         expect(pipeline.setEx).toHaveBeenCalledWith(
-            "vibe:map:v3:projection",
+            "vibe:map:v4:projection",
             86400,
             expect.any(String)
         );
-        expect(pipeline.expire).toHaveBeenCalledWith("vibe:map:v3:track_ids", 86400);
+        expect(pipeline.expire).toHaveBeenCalledWith("vibe:map:v4:track_ids", 86400);
         expect(pipeline.exec).toHaveBeenCalledTimes(1);
     });
 

@@ -21,6 +21,19 @@ export interface MapTrack {
     valence: number | null;
     /** Full per-mood scores (present in payload; unused by F1, kept for F2). */
     moods?: Record<string, number>;
+    /** v4 payload fields (weight mixer / x-ray) — optional so the map renders
+     * against an older backend that doesn't send them yet. */
+    bpm?: number | null;
+    danceability?: number | null;
+    acousticness?: number | null;
+    key?: string | null;
+    keyScale?: string | null;
+    /** Lyric-analysis scalars; null until the lyrics pipeline analyzes the track. */
+    sentiment?: number | null;
+    lexicalDiversity?: number | null;
+    readingLevel?: number | null;
+    /** true only when lyric analysis completed and the track isn't instrumental. */
+    hasLyrics?: boolean;
 }
 
 /**
