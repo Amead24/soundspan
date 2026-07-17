@@ -38,6 +38,7 @@ erDiagram
     Track ||--o{ MoodBucket : categorized
     Track ||--o{ TrackGenre : tagged
     Track ||--o| TrackEmbedding : "has embedding"
+    Track ||--o| TrackLyricEmbedding : "has lyric embedding"
     Track ||--o| TrackLyrics : "has lyrics"
 
     TrackTidal ||--o{ TrackMapping : "mapped by"
@@ -69,7 +70,8 @@ erDiagram
 | `Track` | Local audio file | `filePath` (unique), `albumId`, analysis fields (bpm, key, mood, energy, etc.) |
 | `TranscodedFile` | Cached transcoded variant | `trackId`, `quality`, `cachePath` |
 | `TrackEmbedding` | CLAP 512-dim vector | `trackId`, `embedding` (pgvector) |
-| `TrackLyrics` | Synced/plain lyrics | `trackId`, `source` (lrclib, embedded, none) |
+| `TrackLyricEmbedding` | Semantic lyric 768-dim vector (nomic-embed-text-v1.5; no ANN index by design — pairwise/bounded-scan consumers only) | `trackId`, `embedding` (pgvector) |
+| `TrackLyrics` | Synced/plain lyrics + lyric analysis results (sentiment, lexical diversity, reading level, instrumental flag, `analysisStatus` lifecycle) | `trackId`, `source` (lrclib, embedded, none), `analysisStatus` |
 
 ### Remote-Provider (catalog references)
 

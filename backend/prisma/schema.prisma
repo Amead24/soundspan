@@ -377,6 +377,7 @@ model Track {
   trackGenres     TrackGenre[]
   transcodedFiles TranscodedFile[]
   embedding       TrackEmbedding?
+  lyricEmbedding  TrackLyricEmbedding?
   lyrics          TrackLyrics?
   syncGroups      SyncGroup[]      @relation("SyncGroupTrack")
 
@@ -1167,9 +1168,27 @@ model TrackLyrics {
   source       String // "lrclib", "embedded", "none"
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-  track        Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  // Lyric analysis results (scalars written ONLY by the CLAP sidecar's lyric
+  // worker; backend TS may only flip analysisStatus — same contract as
+  // Track.vibeAnalysisStatus). Status: NULL, pending, processing, completed,
+  // failed, instrumental. Stale sweeps reset processing → NULL (not pending),
+  // so filters must accept (IS NULL OR = 'pending').
+  sentiment          Float? // VADER compound, [-1, 1]
+  lexicalDiversity   Float? // MTLD (McCarthy–Jarvis), typically ~20–120
+  readingLevel       Float? // Flesch-Kincaid grade
+  isInstrumental     Boolean   @default(false)
+  analysisStatus     String?
+  analysisStartedAt  DateTime?
+  analysisError      String?
+  analysisRetryCount Int       @default(0)
+  analysisVersion    String?
+  analyzedAt         DateTime?
+
+  track Track @relation(fields: [trackId], references: [id], onDelete: Cascade)
 
   @@index([trackId])
+  @@index([analysisStatus])
 }
 
 model TrackEmbedding {
@@ -1181,6 +1200,22 @@ model TrackEmbedding {
 
   @@index([modelVersion])
   @@map("track_embeddings")
+}
+
+// Semantic lyric embeddings (nomic-embed-text-v1.5, 768-D), written ONLY by
+// the CLAP sidecar's lyric worker via psycopg2 — same single-writer contract
+// as track_embeddings. Deliberately no ivfflat index: every v1 consumer is
+// pairwise (x-ray), a candidate re-rank (hybridSimilarity), or a bounded
+// exact scan (mixer), so ANN recall (roadmap F14) never applies here.
+model TrackLyricEmbedding {
+  trackId      String                     @id @map("track_id")
+  embedding    Unsupported("vector(768)")
+  modelVersion String                     @default("nomic-embed-text-v1.5") @map("model_version") @db.VarChar(50)
+  analyzedAt   DateTime                   @default(now()) @map("analyzed_at") @db.Timestamptz
+  track        Track                      @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@index([modelVersion])
+  @@map("track_lyric_embeddings")
 }
 
 model TrackTidal {

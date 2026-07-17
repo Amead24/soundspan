@@ -177,6 +177,10 @@ export const config = {
         discovery: parseEnvBool(process.env.DISCOVERY_ENABLED, true),
         // Made For You mixes / programmatic playlist generation
         autoPlaylists: parseEnvBool(process.env.AUTO_PLAYLISTS_ENABLED, true),
+        // Lyrics analysis pipeline: bulk lyric fetch (LRCLIB), lyric scalars
+        // (sentiment / lexical diversity / reading level) and 768-D lyric
+        // embeddings via the CLAP sidecar's lyric worker
+        lyricsAnalysis: parseEnvBool(process.env.LYRICS_ANALYSIS_ENABLED, true),
     },
 
     audiobookshelf: process.env.AUDIOBOOKSHELF_URL
