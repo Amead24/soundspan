@@ -1403,7 +1403,7 @@ test("QueuePanel shows the empty state when nothing is queued", async () => {
     );
     assert.match(html, /Nothing queued — sweep some dots or play a journey\./);
     // No onClear / onPlayIndex passed: no clear button, rows stay plain text.
-    assert.doesNotMatch(html, /aria-label="Clear queue"/);
+    assert.doesNotMatch(html, /aria-label="Clear upcoming songs"/);
     assert.doesNotMatch(html, /aria-label="Play .* now"/);
 });
 
@@ -1422,7 +1422,7 @@ test("QueuePanel renders the clear affordance and jump rows when their primitive
             onClear: noop,
         })
     );
-    assert.match(html, /aria-label="Clear queue"/);
+    assert.match(html, /aria-label="Clear upcoming songs"/);
     assert.match(html, /aria-label="Play Next Song now"/);
     // Click-through behavior (absolute index math, onClear, empty-disable)
     // lives in queuePanelActions.component.test.ts (happy-dom mounts).

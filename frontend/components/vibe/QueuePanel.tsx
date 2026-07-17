@@ -27,9 +27,10 @@
  *
  * Same do-not-reimplement rule for the other actions: `onPlayIndex` is meant
  * to be `playQueueIndex` verbatim (clicking a row jumps playback there, like
- * /queue) and `onClear` is `clearQueue` verbatim (Listen-Together-aware; it
- * also stops current playback — identical semantics to /queue's Clear Queue
- * button, on purpose).
+ * /queue) and `onClear` is `clearUpcoming` verbatim — it drops only the
+ * UPCOMING items and leaves the current song playing (play-tested: the full
+ * clearQueue's stop-everything semantics surprised in a "what's next" panel;
+ * /queue's explicit Clear Queue button keeps them).
  */
 
 import { useRef, useState } from "react";
@@ -56,8 +57,9 @@ export interface QueuePanelProps {
     /** playQueueIndex, reused verbatim — clicking a row jumps playback to it.
      *  Omit to render rows as plain (non-clickable) text. */
     onPlayIndex?: (index: number) => void;
-    /** clearQueue, reused verbatim (stops playback too, matching /queue's
-     *  Clear Queue). Omit to render no clear affordance. */
+    /** clearUpcoming, reused verbatim — clears only the upcoming items, the
+     *  current song keeps playing. Omit to render no clear affordance
+     *  (Listen Together: the shared queue has no upcoming-only op). */
     onClear?: () => void;
     /** True during a Listen Together session: the shared queue is
      *  server-owned, so a local reorder would desync — mirrors /queue by
@@ -132,9 +134,9 @@ export function QueuePanel({
                     <button
                         type="button"
                         onClick={onClear}
-                        disabled={queue.length === 0}
-                        aria-label="Clear queue"
-                        title="Clear queue (stops playback)"
+                        disabled={upcoming.length === 0}
+                        aria-label="Clear upcoming songs"
+                        title="Clear upcoming songs (keeps playing)"
                         className="ml-auto inline-flex items-center justify-center w-10 h-10 rounded-lg text-gray-400 hover:text-red-400 hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-30 disabled:hover:text-gray-400 disabled:hover:bg-transparent"
                     >
                         <Trash2 className="w-4 h-4" />

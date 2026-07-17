@@ -337,7 +337,7 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
         moveQueueItem,
         removeFromQueue,
         playQueueIndex,
-        clearQueue,
+        clearUpcoming,
     } = useAudioControls();
     const { isInGroup } = useListenTogether();
     const filters = useMapFilters(tracks);
@@ -1694,16 +1694,17 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
                     onReorder={moveQueueItem}
                     onRemove={removeFromQueue}
                     onPlayIndex={playQueueIndex}
-                    onClear={() => {
-                        clearQueue();
-                        // Same toast /queue's Clear Queue shows — one shared
-                        // primitive, one shared message.
-                        toast.success(
-                            isInGroup
-                                ? "Listen Together queue cleared"
-                                : "Queue cleared"
-                        );
-                    }}
+                    // Upcoming-only clear: the current song keeps playing.
+                    // Hidden in Listen Together (server-owned queue has no
+                    // upcoming-only op — same policy as hiding reorder).
+                    onClear={
+                        isInGroup
+                            ? undefined
+                            : () => {
+                                  clearUpcoming();
+                                  toast.success("Upcoming songs cleared");
+                              }
+                    }
                     reorderDisabled={isInGroup}
                 />
             )}

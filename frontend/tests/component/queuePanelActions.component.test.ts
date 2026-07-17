@@ -90,11 +90,14 @@ test("clicking an upcoming row jumps via onPlayIndex with the ABSOLUTE queue ind
     unmount();
 });
 
-test("the clear button fires onClear, and disables on an empty queue", () => {
+test("the clear button fires onClear, and disables when nothing is UPCOMING", () => {
     let cleared = 0;
-    const withItems = mount(
+    const withUpcoming = mount(
         React.createElement(QueuePanel, {
-            queue: [queueTrack("t1", "Current Song", "Current Artist")],
+            queue: [
+                queueTrack("t1", "Current Song", "Current Artist"),
+                queueTrack("t2", "Next Song", "Next Artist"),
+            ],
             currentIndex: 0,
             onClose: noop,
             onReorder: noop,
@@ -103,28 +106,30 @@ test("the clear button fires onClear, and disables on an empty queue", () => {
             },
         })
     );
-    const clear = withItems.container.querySelector<HTMLButtonElement>(
-        '[aria-label="Clear queue"]'
+    const clear = withUpcoming.container.querySelector<HTMLButtonElement>(
+        '[aria-label="Clear upcoming songs"]'
     );
     assert.ok(clear);
     assert.equal(clear!.disabled, false);
     act(() => clear!.click());
     assert.equal(cleared, 1);
-    withItems.unmount();
+    withUpcoming.unmount();
 
-    const empty = mount(
+    // A playing song with an empty upcoming list: nothing to clear — the
+    // button disables instead of offering a no-op (it never stops playback).
+    const currentOnly = mount(
         React.createElement(QueuePanel, {
-            queue: [],
-            currentIndex: -1,
+            queue: [queueTrack("t1", "Current Song", "Current Artist")],
+            currentIndex: 0,
             onClose: noop,
             onReorder: noop,
             onClear: noop,
         })
     );
-    const emptyClear = empty.container.querySelector<HTMLButtonElement>(
-        '[aria-label="Clear queue"]'
+    const disabledClear = currentOnly.container.querySelector<HTMLButtonElement>(
+        '[aria-label="Clear upcoming songs"]'
     );
-    assert.ok(emptyClear);
-    assert.equal(emptyClear!.disabled, true);
-    empty.unmount();
+    assert.ok(disabledClear);
+    assert.equal(disabledClear!.disabled, true);
+    currentOnly.unmount();
 });

@@ -496,6 +496,72 @@ test("moveQueueItem moves an upcoming item and remaps shuffle indices in lockste
     assert.deepEqual(state.shuffleIndices, [0, 4, 1, 3, 2]);
 });
 
+test("clearUpcoming drops only upcoming items — playback and history untouched, shuffle indices filtered", async () => {
+    const tracks = ["t1", "t2", "t3", "t4", "t5"].map((id) => ({
+        id,
+        title: id,
+        artist: { name: "a" },
+        album: { title: "al" },
+        duration: 100,
+    }));
+    const state = createDeferredAudioState({
+        queue: tracks,
+        currentIndex: 1,
+        currentTrack: tracks[1],
+        playbackType: "track",
+        isShuffle: true,
+        shuffleIndices: [1, 4, 0, 2, 3],
+    });
+    const playback = createPlaybackStub({ currentTime: 42, duration: 100 });
+    playback.isPlaying = true;
+    const controls = await renderControls({ state, playback });
+
+    controls.clearUpcoming();
+    state.commit();
+
+    // History (t1) + current (t2) survive; upcoming (t3..t5) are gone.
+    assert.deepEqual(
+        (state.queue as Array<{ id: string }>).map((t) => t.id),
+        ["t1", "t2"],
+    );
+    // The current song keeps playing — the play-tested contract that
+    // separates this from clearQueue's clear-and-stop.
+    assert.equal(state.currentIndex, 1);
+    assert.equal((state.currentTrack as { id: string }).id, "t2");
+    assert.equal(playback.isPlaying, true);
+    // Shuffle entries pointing at removed positions are dropped.
+    assert.deepEqual(state.shuffleIndices, [1, 0]);
+});
+
+test("clearUpcoming no-ops when nothing is upcoming", async () => {
+    const tracks = [
+        {
+            id: "t1",
+            title: "t1",
+            artist: { name: "a" },
+            album: { title: "al" },
+            duration: 100,
+        },
+    ];
+    const state = createDeferredAudioState({
+        queue: tracks,
+        currentIndex: 0,
+        currentTrack: tracks[0],
+        playbackType: "track",
+    });
+    const playback = createPlaybackStub({ currentTime: 0, duration: 100 });
+    const controls = await renderControls({ state, playback });
+
+    controls.clearUpcoming();
+    state.commit();
+
+    assert.deepEqual(
+        (state.queue as Array<{ id: string }>).map((t) => t.id),
+        ["t1"],
+    );
+    assert.equal(state.currentIndex, 0);
+});
+
 test("moveQueueItem refuses to move the current row or cross into history", async () => {
     const tracks = ["t1", "t2", "t3"].map((id) => ({
         id,

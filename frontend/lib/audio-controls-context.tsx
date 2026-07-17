@@ -322,6 +322,14 @@ interface AudioControlsContextType {
      */
     moveQueueItem: (fromIndex: number, toIndex: number) => void;
     clearQueue: () => void;
+    /**
+     * Drop everything AFTER the current item, leaving playback untouched —
+     * the "what's next" clear (vibe queue panel). No-op in Listen Together
+     * sessions (server-owned queue, no upcoming-only op — callers hide the
+     * affordance there) and when nothing is upcoming. clearQueue keeps its
+     * full clear-and-stop semantics (/queue's Clear Queue).
+     */
+    clearUpcoming: () => void;
     setUpcoming: (tracks: Track[], preserveOrder?: boolean) => void; // Replace queue after current track
 
     // Playback modes
@@ -1755,6 +1763,29 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
         void api.clearPlaybackState().catch(() => undefined);
     }, [state, getActiveListenTogetherSession]);
 
+    const clearUpcoming = useCallback(() => {
+        if (getActiveListenTogetherSession()) {
+            return;
+        }
+        if (state.currentIndex >= state.queue.length - 1) {
+            return;
+        }
+        state.setQueue(state.queue.slice(0, state.currentIndex + 1));
+        if (state.isShuffle) {
+            // Shuffle entries reference queue positions; every removed
+            // position sits past currentIndex, so a plain filter suffices
+            // (mirrors removeFromQueue's remapping model, no shifting
+            // needed at the tail).
+            state.setShuffleIndices((prev) =>
+                prev.filter((i) => i <= state.currentIndex)
+            );
+        }
+        // No clearPlaybackState / poll-cooldown stamping: like
+        // removeFromQueue and moveQueueItem, this is a local queue edit that
+        // the normal playback-state persistence flow saves — the current
+        // item keeps playing, so there is no empty-state resurrection risk.
+    }, [state, getActiveListenTogetherSession]);
+
     // Set upcoming tracks without interrupting current playback
     // preserveOrder=true will skip shuffle index generation (used for vibe mode)
     const setUpcoming = useCallback(
@@ -2140,6 +2171,7 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
             removeFromQueue,
             moveQueueItem,
             clearQueue,
+            clearUpcoming,
             setUpcoming,
             toggleShuffle,
             toggleRepeat,
@@ -2174,6 +2206,7 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
             removeFromQueue,
             moveQueueItem,
             clearQueue,
+            clearUpcoming,
             setUpcoming,
             toggleShuffle,
             toggleRepeat,
