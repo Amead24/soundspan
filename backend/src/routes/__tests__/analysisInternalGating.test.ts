@@ -112,6 +112,22 @@ describe("analysisInternal router gating (AUDIO_ANALYSIS_ENABLED=false wiring)",
         expect(mockResolveByEntity).toHaveBeenCalledWith("vibe", "t1");
     });
 
+    it("keeps the admin lyrics retry endpoint reachable while the feature is disabled", async () => {
+        // The lyrics pipeline runs off its own LYRICS_ANALYSIS_ENABLED flag,
+        // so its recovery endpoint must not vanish with AUDIO_ANALYSIS_ENABLED.
+        // Reachability contract: an unauthenticated request gets the auth
+        // ladder's 401 — NOT the FEATURE_DISABLED 404 it would get if the
+        // route moved back into the feature-gated analysis router.
+        const app = buildDisabledAnalysisApp();
+
+        const res = await request(app).post("/api/analysis/lyrics/retry");
+        expect(res.status).toBe(401);
+        expect(res.body).not.toEqual({
+            error: "feature disabled",
+            code: "FEATURE_DISABLED",
+        });
+    });
+
     it("fails closed on the callbacks when INTERNAL_API_SECRET is unset", async () => {
         delete process.env.INTERNAL_API_SECRET;
         const app = buildDisabledAnalysisApp();

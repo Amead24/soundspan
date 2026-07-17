@@ -70,8 +70,10 @@ export function rovingTabIndex<T>(option: T, current: T): 0 | -1 {
  * disabled while still checked (the mixer's force mode stays "attract" when
  * its scores vanish), and a disabled button is unfocusable, which would
  * leave the whole group with no Tab stop. Fall back to the first enabled
- * option; if everything is disabled, the first option (a dead Tab stop
- * beats an unreachable group for screen-reader discovery).
+ * option; if everything is disabled, the first option (arbitrary —
+ * sequential focus skips disabled buttons regardless of tabIndex, so this
+ * branch only keeps the return type total; unreachable for the force group,
+ * whose "off" option is never disabled).
  */
 export function rovingTabStop<T>(
     options: readonly T[],
