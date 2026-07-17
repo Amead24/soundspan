@@ -386,6 +386,8 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
         new Float32Array(0),
     ]);
     const layoutFlipRef = useRef(0);
+    /** Frozen copy of a morph's start positions — see animatePositions. */
+    const layoutFromRef = useRef<Float32Array>(new Float32Array(0));
 
     // Hard-snap to the current mode's buffer whenever the track list changes
     // (initial load / reload) — no animation. Toggling layoutMode itself is
@@ -444,6 +446,19 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
                 ];
             }
 
+            // Freeze the start positions: `from` is usually the live
+            // `positions`, i.e. one of the two flip buffers this loop writes
+            // into — without a copy, every second frame overwrites the
+            // buffer `from` points at, so later frames lerp from a mutated
+            // start and the motion double-eases instead of following
+            // easeInOutCubic from the true origin (endpoints stayed exact,
+            // which is why it was invisible rather than harmless).
+            if (layoutFromRef.current.length !== from.length) {
+                layoutFromRef.current = new Float32Array(from.length);
+            }
+            layoutFromRef.current.set(from);
+            const frozenFrom = layoutFromRef.current;
+
             const start =
                 typeof performance !== "undefined" ? performance.now() : Date.now();
             const tick = (now: number) => {
@@ -452,7 +467,7 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
                 const eased = easeInOutCubic(t);
                 const outBuf = layoutBuffersRef.current[layoutFlipRef.current % 2];
                 layoutFlipRef.current += 1;
-                setRawPositions(lerpPositions(from, to, eased, outBuf));
+                setRawPositions(lerpPositions(frozenFrom, to, eased, outBuf));
                 if (t < 1) {
                     layoutRafRef.current = requestAnimationFrame(tick);
                 } else {
