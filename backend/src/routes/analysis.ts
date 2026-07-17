@@ -879,81 +879,10 @@ router.post("/vibe/retry", requireAuth, requireAdmin, async (req, res) => {
     }
 });
 
-/**
- * @openapi
- * /api/analysis/lyrics/retry:
- *   post:
- *     summary: Retry failed lyric analyses
- *     description: Resets every failed lyric analysis to pending (clearing the error and retry count) and resolves its failure records. The enrichment worker's lyrics phase re-queues pending rows on its next cycle, behind the lyric-worker heartbeat gate.
- *     tags: [Analysis]
- *     security:
- *       - sessionAuth: []
- *       - apiKeyAuth: []
- *     responses:
- *       200:
- *         description: Failed lyric analyses reset to pending
- *       401:
- *         description: Not authenticated
- *       403:
- *         description: Admin access required
- */
-/**
- * POST /api/analysis/lyrics/retry
- * Retry failed lyric analyses (admin only)
- *
- * Unlike /vibe/retry this does not RPUSH directly: lyric queueing is owned by
- * the enrichment lyrics phase, which only queues against a live lyric-worker
- * heartbeat and flips rows to processing AFTER a successful enqueue. Resetting
- * to 'pending' hands the rows back to that one queueing path. Driven off the
- * TrackLyrics table (not EnrichmentFailure rows) so rows whose failure
- * callback never landed are still recoverable.
- */
-router.post("/lyrics/retry", requireAuth, requireAdmin, async (req, res) => {
-    try {
-        const failedRows = await prisma.trackLyrics.findMany({
-            where: { analysisStatus: "failed" },
-            select: { trackId: true },
-        });
-
-        if (failedRows.length === 0) {
-            return res.json({
-                message: "No failed lyric analyses to retry",
-                reset: 0,
-            });
-        }
-
-        const trackIds = failedRows.map((row) => row.trackId);
-
-        // Reset the whole failed state. analysisRetryCount goes back to 0
-        // deliberately (the Essentia retry-count trap: a status-only reset
-        // leaves max-retried rows permanently skipped by 3-strike sweeps).
-        const result = await prisma.trackLyrics.updateMany({
-            where: { trackId: { in: trackIds }, analysisStatus: "failed" },
-            data: {
-                analysisStatus: "pending",
-                analysisError: null,
-                analysisStartedAt: null,
-                analysisRetryCount: 0,
-            },
-        });
-
-        await enrichmentFailureService.resolveByEntities("lyrics", trackIds);
-
-        logger.info(`Reset ${result.count} failed lyric analyses for retry`);
-
-        res.json({
-            message: `Reset ${result.count} failed lyric analyses; the next enrichment cycle will re-queue them`,
-            reset: result.count,
-        });
-    } catch (error: any) {
-        logger.error("Retry lyric analyses error:", error);
-        res.status(500).json({ error: "Failed to retry lyric analyses" });
-    }
-});
-
-// Machine callbacks from the CLAP analyzer (/vibe/failure, /vibe/success)
-// live in a separate router that index.ts keeps mounted even when the
-// audioAnalysis feature flag is off.
+// Machine callbacks from the CLAP analyzer (/vibe/failure, /vibe/success,
+// the lyric worker's /lyrics/*) and the admin /lyrics/retry endpoint live in
+// a separate router that index.ts keeps mounted even when the audioAnalysis
+// feature flag is off — the lyrics pipeline runs off its own flag.
 router.use(analysisInternalRoutes);
 
 export default router;

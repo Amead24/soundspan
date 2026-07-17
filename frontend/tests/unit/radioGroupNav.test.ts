@@ -3,6 +3,7 @@ import test from "node:test";
 import {
     radioTargetFor,
     rovingTabIndex,
+    rovingTabStop,
 } from "../../components/vibe/radioGroupNav";
 
 const MODES = ["off", "attract", "repel"] as const;
@@ -47,4 +48,24 @@ test("empty option lists never navigate", () => {
 test("rovingTabIndex makes exactly the checked option the Tab stop", () => {
     assert.equal(rovingTabIndex("off", "off"), 0);
     assert.equal(rovingTabIndex("attract", "off"), -1);
+});
+
+test("rovingTabStop is the checked option while it is enabled", () => {
+    assert.equal(rovingTabStop(MODES, "attract"), "attract");
+});
+
+test("rovingTabStop falls back to the first enabled option when the checked one is disabled", () => {
+    // The real regression shape: force stays checked on "attract" while its
+    // scores vanish, disabling it — a disabled button is unfocusable, so
+    // without the fallback the group has NO Tab stop at all.
+    const disabled = (m: string) => m !== "off";
+    assert.equal(rovingTabStop(MODES, "attract", disabled), "off");
+});
+
+test("rovingTabStop degrades to the first option when everything is disabled", () => {
+    assert.equal(
+        rovingTabStop(MODES, "attract", () => true),
+        "off"
+    );
+    assert.equal(rovingTabStop([], "off"), undefined);
 });

@@ -75,7 +75,10 @@ Exception: the CLAP analyzer machine callbacks in
 `/api/analysis/vibe/success`, and the lyric worker's
 `/api/analysis/lyrics/failure`, `/api/analysis/lyrics/success`) remain mounted
 even when `AUDIO_ANALYSIS_ENABLED=false`, so analyzers draining in-flight work
-can still report results.
+can still report results. The admin `/api/analysis/lyrics/retry` endpoint
+rides in the same router for the same reason: the lyrics pipeline runs off its
+own `LYRICS_ANALYSIS_ENABLED` flag, so its recovery path must not disappear
+with the audio-analysis flag.
 
 ## Update Rule
 

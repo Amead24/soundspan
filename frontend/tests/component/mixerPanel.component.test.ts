@@ -259,6 +259,27 @@ test("force radios rove: one Tab stop, arrows move selection, disabled skipped",
     await mounted.unmount();
 });
 
+test("force group keeps a Tab stop when the CHECKED mode is disabled", async () => {
+    // Scores vanish (seed changed / map went stale) while force is still
+    // checked on "attract": attract is now checked+disabled (unfocusable).
+    // The Tab stop must fall back to an enabled option or the whole group
+    // becomes keyboard-unreachable.
+    const mounted = await mountPanel(
+        mixerState({ forceMode: "attract", scores: null })
+    );
+    const radios = Array.from(
+        mounted.container.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+    );
+    assert.equal(radios[1].getAttribute("aria-checked"), "true");
+    assert.equal(radios[1].disabled, true);
+    assert.deepEqual(
+        radios.map((r) => r.tabIndex),
+        [0, -1, -1],
+        "the enabled 'off' option carries the group's Tab stop"
+    );
+    await mounted.unmount();
+});
+
 test("ranked rows fly to the track; close button closes", async () => {
     const state = mixerState({
         seedId: "t1",

@@ -32,7 +32,21 @@ type QueryRow = {
 
 const mockQueryRaw = jest.fn<(...args: unknown[]) => Promise<QueryRow[]>>();
 const mockRedisGet = jest.fn<(...args: unknown[]) => Promise<string | null>>();
-const mockRedisSetEx = jest.fn<(...args: unknown[]) => Promise<string>>();
+// The projection + ids pair is written through ONE multi()/exec so it can
+// never half-land; the mock records the queued setEx calls and lets tests
+// reject exec() to exercise the cache-failure path.
+const mockRedisSetEx = jest.fn<(...args: unknown[]) => unknown>();
+const mockRedisExec = jest.fn<() => Promise<unknown[]>>();
+const mockRedisMulti = jest.fn(() => {
+    const pipeline = {
+        setEx: (...args: unknown[]) => {
+            mockRedisSetEx(...args);
+            return pipeline;
+        },
+        exec: () => mockRedisExec(),
+    };
+    return pipeline;
+});
 const mockExistsSync = jest.fn<(candidatePath: string) => boolean>();
 const mockPathJoin = jest.fn<(...parts: string[]) => string>();
 const mockParseEmbedding = jest.fn<(embedding: string) => number[]>();
@@ -94,7 +108,7 @@ jest.mock("../../utils/db", () => ({
 jest.mock("../../utils/redis", () => ({
     redisClient: {
         get: (...args: unknown[]) => mockRedisGet(...args),
-        setEx: (...args: unknown[]) => mockRedisSetEx(...args),
+        multi: () => mockRedisMulti(),
     },
 }));
 
@@ -174,7 +188,7 @@ describe("computeMapProjection", () => {
         lastWorkerOptions = null;
 
         mockRedisGet.mockResolvedValue(null);
-        mockRedisSetEx.mockResolvedValue("OK");
+        mockRedisExec.mockResolvedValue(["OK", "OK"]);
         mockQueryRaw.mockResolvedValue([]);
         mockExistsSync.mockImplementation((candidatePath: string) => candidatePath.endsWith("umapWorker.ts"));
         mockPathJoin.mockImplementation((...parts: string[]) => parts.join("/").replace(/\/+/g, "/"));
@@ -312,6 +326,8 @@ describe("computeMapProjection", () => {
             ids: ["track-1", "track-2", "track-3", "track-4"],
         });
         expect(mockRedisSetEx).toHaveBeenCalledTimes(2);
+        // Both writes ride ONE multi/exec so the pair can never half-land
+        expect(mockRedisExec).toHaveBeenCalledTimes(1);
     });
 
     it("carries v4 audio/lyric fields, 3dp-rounded, with the hasLyrics gate", async () => {
@@ -445,9 +461,7 @@ describe("computeMapProjection", () => {
 
     it("returns the projection even when Redis caching fails", async () => {
         mockQueryRaw.mockResolvedValueOnce(makeRows(4));
-        mockRedisSetEx.mockImplementationOnce(async () => {
-            throw new Error("redis down");
-        });
+        mockRedisExec.mockRejectedValueOnce(new Error("redis down"));
 
         const { computeMapProjection } = loadModule();
         const result = await computeMapProjection();

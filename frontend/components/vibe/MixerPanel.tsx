@@ -14,7 +14,7 @@ import {
     LYRIC_DIMENSION_KEYS,
 } from "./dimensions";
 import { VibePanel } from "./panelChrome";
-import { radioTargetFor, rovingTabIndex } from "./radioGroupNav";
+import { radioTargetFor, rovingTabStop } from "./radioGroupNav";
 import { TrackSearchPicker } from "./TrackSearchPicker";
 import type { MixerState } from "./useMixer";
 import type { MapTrack } from "./types";
@@ -71,6 +71,16 @@ export function MixerPanel({
     onLocate,
     onClose,
 }: MixerPanelProps) {
+    const forceModeDisabled = (mode: (typeof FORCE_MODES)[number]) =>
+        mode !== "off" && !mixer.scores;
+    // The checked mode can be disabled while still checked (scores vanish on
+    // seed change / map staleness) — the Tab stop must fall back to an
+    // enabled option or the group becomes keyboard-unreachable.
+    const forceTabStop = rovingTabStop(
+        FORCE_MODES,
+        mixer.forceMode,
+        forceModeDisabled
+    );
     return (
         <VibePanel
             title="Similarity mixer"
@@ -189,8 +199,8 @@ export function MixerPanel({
                                 type="button"
                                 role="radio"
                                 aria-checked={mixer.forceMode === mode}
-                                tabIndex={rovingTabIndex(mode, mixer.forceMode)}
-                                disabled={mode !== "off" && !mixer.scores}
+                                tabIndex={mode === forceTabStop ? 0 : -1}
+                                disabled={forceModeDisabled(mode)}
                                 onClick={() => mixer.setForceMode(mode)}
                                 onKeyDown={(e) => {
                                     // Roving tabindex: arrows move selection
@@ -199,7 +209,7 @@ export function MixerPanel({
                                         e.key,
                                         FORCE_MODES,
                                         mixer.forceMode,
-                                        (m) => m !== "off" && !mixer.scores
+                                        forceModeDisabled
                                     );
                                     if (!target) return;
                                     e.preventDefault();

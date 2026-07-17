@@ -1,16 +1,24 @@
 import { Router } from "express";
 import { logger } from "../utils/logger";
+import { prisma } from "../utils/db";
 import { enrichmentFailureService } from "../services/enrichmentFailureService";
+import { requireAuth, requireAdmin } from "../middleware/auth";
 import { requireInternalSecret } from "../middleware/internalAuth";
 
 const router = Router();
 
-// Each machine-to-machine callback is guarded per-route (rather than with a
-// router-wide `router.use`) so that when this router is mounted in front of
-// the feature-disabled handler (index.ts, AUDIO_ANALYSIS_ENABLED=false),
-// non-callback /api/analysis paths fall through to the documented
-// FEATURE_DISABLED 404 instead of being rejected 403 by the secret check.
+// Each route here is guarded per-route (rather than with a router-wide
+// `router.use`) so that when this router is mounted in front of the
+// feature-disabled handler (index.ts, AUDIO_ANALYSIS_ENABLED=false),
+// non-matching /api/analysis paths fall through to the documented
+// FEATURE_DISABLED 404 instead of being rejected by a blanket check.
 // requireInternalSecret fails closed when the secret is unconfigured.
+//
+// Besides the machine callbacks, this router also carries the admin
+// /lyrics/retry endpoint: the lyrics pipeline runs off its own
+// LYRICS_ANALYSIS_ENABLED flag, so its recovery path must stay reachable
+// when AUDIO_ANALYSIS_ENABLED=false — the same reasoning that put the
+// lyrics failure/success callbacks here.
 
 /**
  * @openapi
@@ -251,13 +259,88 @@ router.post("/lyrics/success", requireInternalSecret, async (req, res) => {
 });
 
 /**
+ * @openapi
+ * /api/analysis/lyrics/retry:
+ *   post:
+ *     summary: Retry failed lyric analyses
+ *     description: Resets every failed lyric analysis to pending (clearing the error and retry count) and resolves its failure records. The enrichment worker's lyrics phase re-queues pending rows on its next cycle, behind the lyric-worker heartbeat gate.
+ *     tags: [Analysis]
+ *     security:
+ *       - sessionAuth: []
+ *       - apiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Failed lyric analyses reset to pending
+ *       401:
+ *         description: Not authenticated
+ *       403:
+ *         description: Admin access required
+ */
+/**
+ * POST /api/analysis/lyrics/retry
+ * Retry failed lyric analyses (admin only)
+ *
+ * Unlike /vibe/retry this does not RPUSH directly: lyric queueing is owned by
+ * the enrichment lyrics phase, which only queues against a live lyric-worker
+ * heartbeat and flips rows to processing AFTER a successful enqueue. Resetting
+ * to 'pending' hands the rows back to that one queueing path. Driven off the
+ * TrackLyrics table (not EnrichmentFailure rows) so rows whose failure
+ * callback never landed are still recoverable.
+ */
+router.post("/lyrics/retry", requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const failedRows = await prisma.trackLyrics.findMany({
+            where: { analysisStatus: "failed" },
+            select: { trackId: true },
+        });
+
+        if (failedRows.length === 0) {
+            return res.json({
+                message: "No failed lyric analyses to retry",
+                reset: 0,
+            });
+        }
+
+        const trackIds = failedRows.map((row) => row.trackId);
+
+        // Reset the whole failed state. analysisRetryCount goes back to 0
+        // deliberately (the Essentia retry-count trap: a status-only reset
+        // leaves max-retried rows permanently skipped by 3-strike sweeps).
+        const result = await prisma.trackLyrics.updateMany({
+            where: { trackId: { in: trackIds }, analysisStatus: "failed" },
+            data: {
+                analysisStatus: "pending",
+                analysisError: null,
+                analysisStartedAt: null,
+                analysisRetryCount: 0,
+            },
+        });
+
+        await enrichmentFailureService.resolveByEntities("lyrics", trackIds);
+
+        logger.info(`Reset ${result.count} failed lyric analyses for retry`);
+
+        res.json({
+            message: `Reset ${result.count} failed lyric analyses; the next enrichment cycle will re-queue them`,
+            reset: result.count,
+        });
+    } catch (error: any) {
+        logger.error("Retry lyric analyses error:", error);
+        res.status(500).json({ error: "Failed to retry lyric analyses" });
+    }
+});
+
+/**
  * Machine-to-machine callbacks invoked by the CLAP analyzer service
  * (`/api/analysis/vibe/failure`, `/api/analysis/vibe/success`, and the lyric
- * worker's `/api/analysis/lyrics/failure` + `/api/analysis/lyrics/success`).
+ * worker's `/api/analysis/lyrics/failure` + `/api/analysis/lyrics/success`),
+ * plus the admin `/api/analysis/lyrics/retry` recovery endpoint.
  *
  * Kept in a dedicated router so they stay mounted under `/api/analysis` even
  * when `AUDIO_ANALYSIS_ENABLED=false` — analyzers draining in-flight queue
  * items (e.g. AIO deployments, where the in-container analyzers are not
- * controlled by the flag) must always be able to report results.
+ * controlled by the flag) must always be able to report results, and the
+ * lyrics pipeline (its own LYRICS_ANALYSIS_ENABLED flag) must keep its
+ * recovery path.
  */
 export default router;

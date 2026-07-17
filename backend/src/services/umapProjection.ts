@@ -138,21 +138,20 @@ function getDominantMood(
 
 async function cacheResult(result: VibeMapResponse): Promise<void> {
     try {
-        await redisClient.setEx(
-            CACHE_KEY,
-            CACHE_TTL_SECONDS,
-            JSON.stringify(result)
-        );
         const idsPayload: VibeMapIdsPayload = {
             computedAt: result.computedAt,
             trackCount: result.trackCount,
             ids: result.tracks.map((track) => track.id),
         };
-        await redisClient.setEx(
-            IDS_CACHE_KEY,
-            CACHE_TTL_SECONDS,
-            JSON.stringify(idsPayload)
-        );
+        // One MULTI so the pair can never half-land: a projection write that
+        // succeeded while the ids write failed would leave a PREVIOUS
+        // compute's ids key serving under a mismatched computedAt — a state
+        // getCachedProjectionIds' missing-key fallback cannot detect.
+        await redisClient
+            .multi()
+            .setEx(CACHE_KEY, CACHE_TTL_SECONDS, JSON.stringify(result))
+            .setEx(IDS_CACHE_KEY, CACHE_TTL_SECONDS, JSON.stringify(idsPayload))
+            .exec();
     } catch (error) {
         logger.warn(
             "[VIBE-MAP] Failed to cache projection:",
