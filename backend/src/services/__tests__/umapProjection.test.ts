@@ -27,6 +27,7 @@ type QueryRow = {
     bpm: number | null;
     danceability: number | null;
     acousticness: number | null;
+    instrumentalness: number | null;
     key: string | null;
     keyScale: string | null;
     lyricSentiment: number | null;
@@ -143,6 +144,7 @@ function makeRow(index: number, overrides: Partial<QueryRow> = {}): QueryRow {
         bpm: 120,
         danceability: 0.5,
         acousticness: 0.4,
+        instrumentalness: 0.1,
         key: "C",
         keyScale: "major",
         lyricSentiment: null,
@@ -362,6 +364,7 @@ describe("computeMapProjection", () => {
                 bpm: 128.457,
                 danceability: 0.877,
                 acousticness: 0.123,
+                instrumentalness: 0.1,
                 key: "A",
                 keyScale: "minor",
                 sentiment: -0.543,

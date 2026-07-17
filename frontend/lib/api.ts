@@ -3025,6 +3025,7 @@ class ApiClient {
                 bpm?: number | null;
                 danceability?: number | null;
                 acousticness?: number | null;
+                instrumentalness?: number | null;
                 key?: string | null;
                 keyScale?: string | null;
                 sentiment?: number | null;

@@ -26,6 +26,7 @@ export interface MapTrack {
     bpm?: number | null;
     danceability?: number | null;
     acousticness?: number | null;
+    instrumentalness?: number | null;
     key?: string | null;
     keyScale?: string | null;
     /** Lyric-analysis scalars; null until the lyrics pipeline analyzes the track. */
@@ -102,4 +103,56 @@ export const FILTERABLE_MOODS: readonly string[] = [
 export function moodLabel(mood: string): string {
     if (mood === NEUTRAL_MOOD) return "Neutral";
     return mood.replace(/^mood/, "");
+}
+
+/** One side of an x-ray comparison. */
+export interface XrayTrackRef {
+    id: string;
+    title: string;
+    artist: string;
+    albumId: string | null;
+    coverUrl: string | null;
+}
+
+export type XrayLyricStatus = "analyzed" | "instrumental" | "unknown";
+
+export interface XrayScalarPair {
+    a: number;
+    b: number;
+    similarity: number;
+}
+
+/** Response of GET /api/vibe/xray?a=&b= — machine-readable components; the
+ * client derives Camelot labels (simMath) and verdict sentences (verdict.ts). */
+export interface XrayResponse {
+    a: XrayTrackRef;
+    b: XrayTrackRef;
+    overall: { similarity: number; weights: "custom" | "default" };
+    clap: { available: boolean; similarity: number | null };
+    features: Array<{
+        key:
+            | "energy"
+            | "valence"
+            | "bpm"
+            | "danceability"
+            | "acousticness"
+            | "instrumentalness";
+        a: number | null;
+        b: number | null;
+        similarity: number;
+    }>;
+    keys: {
+        a: { key: string; scale: string | null } | null;
+        b: { key: string; scale: string | null } | null;
+        similarity: number;
+    };
+    lyrics: {
+        aStatus: XrayLyricStatus;
+        bStatus: XrayLyricStatus;
+        semanticSimilarity: number | null;
+        sentiment: XrayScalarPair | null;
+        lexical: XrayScalarPair | null;
+        reading: XrayScalarPair | null;
+    };
+    sharedNeighbors: XrayTrackRef[];
 }

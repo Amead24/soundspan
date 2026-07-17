@@ -36,6 +36,7 @@ export interface VibeMapTrack {
     bpm: number | null;
     danceability: number | null;
     acousticness: number | null;
+    instrumentalness: number | null;
     key: string | null;
     keyScale: string | null;
     sentiment: number | null;
@@ -71,6 +72,7 @@ type TrackRow = {
     bpm: number | null;
     danceability: number | null;
     acousticness: number | null;
+    instrumentalness: number | null;
     key: string | null;
     keyScale: string | null;
     lyricSentiment: number | null;
@@ -178,6 +180,7 @@ function buildMapTrack(
         bpm: round3(row.bpm),
         danceability: round3(row.danceability),
         acousticness: round3(row.acousticness),
+        instrumentalness: round3(row.instrumentalness),
         key: row.key,
         keyScale: row.keyScale,
         sentiment: round3(row.lyricSentiment),
@@ -311,6 +314,7 @@ async function doCompute(): Promise<VibeMapResponse> {
             t.bpm,
             t.danceability,
             t.acousticness,
+            t.instrumentalness,
             t.key,
             t."keyScale",
             tl.sentiment as "lyricSentiment",
