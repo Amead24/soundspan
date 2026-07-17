@@ -102,10 +102,21 @@ export function MapCanvas(props: MapCanvasProps) {
 
         const dpr =
             typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-        canvas.width = Math.round(width * dpr);
-        canvas.height = Math.round(height * dpr);
-        canvas.style.width = `${width}px`;
-        canvas.style.height = `${height}px`;
+        // Resize only when the target size actually changed: assigning
+        // canvas.width — even to its current value — forces the browser to
+        // reallocate and wipe the backing store and reset all context state,
+        // which this draw loop would otherwise pay on EVERY repaint (60fps
+        // while panning/zooming, every mixer slider input). dpr is re-read
+        // each draw so moving the window across monitors still re-sizes; the
+        // clearRect below owns clearing on the (common) same-size path.
+        const targetWidth = Math.round(width * dpr);
+        const targetHeight = Math.round(height * dpr);
+        if (canvas.width !== targetWidth) canvas.width = targetWidth;
+        if (canvas.height !== targetHeight) canvas.height = targetHeight;
+        const cssWidth = `${width}px`;
+        const cssHeight = `${height}px`;
+        if (canvas.style.width !== cssWidth) canvas.style.width = cssWidth;
+        if (canvas.style.height !== cssHeight) canvas.style.height = cssHeight;
 
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
