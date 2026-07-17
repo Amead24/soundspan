@@ -51,6 +51,10 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { TrackPreferenceButtons } from "@/components/player/TrackPreferenceButtons";
 import { buildPreferenceMetadata } from "@/hooks/useTrackPreference";
 import { MapCanvas } from "./MapCanvas";
+import { MixerPanel } from "./MixerPanel";
+import { useMixer } from "./useMixer";
+import { buildScoreColorLut } from "./vibeMixer";
+import { computeForcePositions } from "./mapForce";
 import { MapOverlay } from "./MapOverlay";
 import { MapDecorations } from "./MapDecorations";
 import { SpotlightSearch } from "./SpotlightSearch";
@@ -143,7 +147,7 @@ const TRAIL_FADE_RECOMPUTE_MS = 60_000;
  * below), and entering any vibe mode / a sweep chip appearing genuinely
  * closes it instead of merely hiding it.
  */
-type AuxSurface = "queue" | "trail" | "about" | null;
+type AuxSurface = "queue" | "trail" | "about" | "mixer" | null;
 
 const EMPTY_TRAIL: { x: number; y: number; alpha: number }[] = [];
 
@@ -264,6 +268,9 @@ export interface VibeMapProps {
 export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [tracks, setTracks] = useState<MapTrack[]>([]);
+    /** computedAt of the loaded map payload — the mixer endpoint's
+     *  staleness contract (its arrays must align to THIS payload). */
+    const [mapComputedAt, setMapComputedAt] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -408,50 +415,62 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
     const positions =
         rawPositions.length === tracks.length * 2 ? rawPositions : naturalPositions;
 
+    /**
+     * Eased morph of the positions buffer from one layout to another —
+     * shared by the spread/natural toggle and the mixer's attract/repel
+     * force (both feed the same single-source `positions` the canvas,
+     * hit-testing and decorations read). One rAF owner (layoutRafRef):
+     * starting a new morph cancels whichever was running.
+     */
+    const animatePositions = useCallback(
+        (from: Float32Array, to: Float32Array) => {
+            if (layoutRafRef.current != null) {
+                cancelAnimationFrame(layoutRafRef.current);
+                layoutRafRef.current = null;
+            }
+
+            // Reduced motion: snap straight to the target buffer in a single
+            // setState — no rAF loop, no interpolation.
+            if (reducedMotion) {
+                setRawPositions(to);
+                return;
+            }
+
+            if (layoutBuffersRef.current[0].length !== to.length) {
+                layoutBuffersRef.current = [
+                    new Float32Array(to.length),
+                    new Float32Array(to.length),
+                ];
+            }
+
+            const start =
+                typeof performance !== "undefined" ? performance.now() : Date.now();
+            const tick = (now: number) => {
+                const elapsed = now - start;
+                const t = Math.min(1, elapsed / LAYOUT_ANIM_MS);
+                const eased = easeInOutCubic(t);
+                const outBuf = layoutBuffersRef.current[layoutFlipRef.current % 2];
+                layoutFlipRef.current += 1;
+                setRawPositions(lerpPositions(from, to, eased, outBuf));
+                if (t < 1) {
+                    layoutRafRef.current = requestAnimationFrame(tick);
+                } else {
+                    layoutRafRef.current = null;
+                }
+            };
+            layoutRafRef.current = requestAnimationFrame(tick);
+        },
+        [reducedMotion]
+    );
+
     const toggleLayoutMode = useCallback(() => {
         const next: LayoutMode = layoutMode === "spread" ? "natural" : "spread";
-        const from = positions;
         const to = next === "spread" ? spreadPositions : naturalPositions;
 
         setLayoutMode(next);
         writeStoredString(sessionStorageSafe(), LAYOUT_STORAGE_KEY, next);
-
-        if (layoutRafRef.current != null) {
-            cancelAnimationFrame(layoutRafRef.current);
-            layoutRafRef.current = null;
-        }
-
-        // Reduced motion: snap straight to the target buffer in a single
-        // setState — no rAF loop, no interpolation.
-        if (reducedMotion) {
-            setRawPositions(to);
-            return;
-        }
-
-        if (layoutBuffersRef.current[0].length !== to.length) {
-            layoutBuffersRef.current = [
-                new Float32Array(to.length),
-                new Float32Array(to.length),
-            ];
-        }
-
-        const start =
-            typeof performance !== "undefined" ? performance.now() : Date.now();
-        const tick = (now: number) => {
-            const elapsed = now - start;
-            const t = Math.min(1, elapsed / LAYOUT_ANIM_MS);
-            const eased = easeInOutCubic(t);
-            const outBuf = layoutBuffersRef.current[layoutFlipRef.current % 2];
-            layoutFlipRef.current += 1;
-            setRawPositions(lerpPositions(from, to, eased, outBuf));
-            if (t < 1) {
-                layoutRafRef.current = requestAnimationFrame(tick);
-            } else {
-                layoutRafRef.current = null;
-            }
-        };
-        layoutRafRef.current = requestAnimationFrame(tick);
-    }, [layoutMode, positions, spreadPositions, naturalPositions, reducedMotion]);
+        animatePositions(positions, to);
+    }, [layoutMode, positions, spreadPositions, naturalPositions, animatePositions]);
 
     const indexById = useMemo(() => {
         const m = new Map<string, number>();
@@ -472,13 +491,76 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
     // positions without re-running on every layout-animation frame.
     const posOfRef = useLatest(posOf);
 
+    // --- Weight mixer (auxSurface "mixer"): live recolor lens + force ------
+    const mixerActive = auxSurface === "mixer";
+    const mixer = useMixer({
+        tracks,
+        computedAt: mapComputedAt,
+        active: mixerActive,
+    });
+    const scoreLut = useMemo(() => buildScoreColorLut(), []);
+    /** Scores drive the canvas lens only while the mixer surface is open. */
+    const mixerScores = mixerActive ? mixer.scores : null;
+
+    // Force displacement: recompute the target from the ACTIVE layout buffer
+    // and morph toward it through the shared animatePositions machinery; on
+    // deactivation (mode off, panel closed, seed/scores gone) morph back.
+    // Reads the live positions through a ref so this effect never re-fires
+    // on the morph's own frames.
+    const positionsRef = useLatest(positions);
+    const forceTargetRef = useRef<Float32Array>(new Float32Array(0));
+    const forceAppliedRef = useRef(false);
+    useEffect(() => {
+        const baseLayout =
+            layoutMode === "spread" ? spreadPositions : naturalPositions;
+        const forceActive =
+            mixerActive &&
+            mixer.forceMode !== "off" &&
+            mixer.scores !== null &&
+            mixer.seedIndex != null &&
+            baseLayout.length === mixer.scores.length * 2;
+
+        if (forceActive) {
+            if (forceTargetRef.current.length !== baseLayout.length) {
+                forceTargetRef.current = new Float32Array(baseLayout.length);
+            }
+            computeForcePositions(
+                baseLayout,
+                mixer.seedIndex!,
+                mixer.scores!,
+                mixer.forceMode as "attract" | "repel",
+                mixer.forceStrength,
+                forceTargetRef.current
+            );
+            forceAppliedRef.current = true;
+            animatePositions(positionsRef.current, forceTargetRef.current);
+        } else if (forceAppliedRef.current) {
+            forceAppliedRef.current = false;
+            animatePositions(positionsRef.current, baseLayout);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- positionsRef comes from useLatest(), a stable ref identity; intentionally excluded so the morph's own position frames never re-fire this effect.
+    }, [
+        mixerActive,
+        mixer.forceMode,
+        mixer.forceStrength,
+        mixer.scores,
+        mixer.seedIndex,
+        layoutMode,
+        spreadPositions,
+        naturalPositions,
+        animatePositions,
+    ]);
+
     // --- Data load (accepted raw useEffect + api pattern) -------------------
     useEffect(() => {
         let cancelled = false;
         async function load() {
             try {
                 const data = await api.getVibeMap();
-                if (!cancelled) setTracks(data.tracks);
+                if (!cancelled) {
+                    setTracks(data.tracks);
+                    setMapComputedAt(data.computedAt);
+                }
             } catch {
                 if (!cancelled) setError("Failed to load vibe map data");
             } finally {
@@ -1356,6 +1438,8 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
                             highlightIds={effectiveHighlightIds}
                             dimUnhighlighted={effectiveDim}
                             hoveredId={hoveredId}
+                            scoreValues={mixerScores}
+                            scoreColors={scoreLut}
                             onPointerDown={handlePointerDown}
                             onPointerMove={handlePointerMove}
                             onPointerUp={handlePointerUp}
@@ -1529,6 +1613,8 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
                         trailSaving={trailSaving}
                         aboutPopoverOpen={auxSurface === "about"}
                         onToggleAboutPopover={() => toggleAuxSurface("about")}
+                        mixerOpen={mixerActive}
+                        onToggleMixer={() => toggleAuxSurface("mixer")}
                         isFullscreen={isFullscreen}
                         onToggleFullscreen={() => setIsFullscreen((v) => !v)}
                     />
@@ -1565,6 +1651,21 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
                     onReorder={moveQueueItem}
                     onRemove={removeFromQueue}
                     reorderDisabled={isInGroup}
+                />
+            )}
+
+            {/* Weight-mixer panel — same aux slot/exclusivity as the queue
+                panel: entering a mode or a sweep chip genuinely closes it
+                (weights keep applying server-side to /similar either way). */}
+            {mixerActive && !sweepChipOpen && (
+                <MixerPanel
+                    mixer={mixer}
+                    tracks={tracks}
+                    nowPlayingId={
+                        beaconOnMap && currentTrack ? currentTrack.id : null
+                    }
+                    onLocate={locateTrack}
+                    onClose={() => setAuxSurface(null)}
                 />
             )}
 

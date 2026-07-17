@@ -50,6 +50,7 @@ import {
     RotateCcw,
     Route,
     Shuffle,
+    SlidersHorizontal,
     ZoomIn,
     ZoomOut,
 } from "lucide-react";
@@ -105,6 +106,9 @@ export interface ViewControlsProps {
      *  exclusive `auxSurface`, same prop pattern as the trail popover. */
     aboutPopoverOpen: boolean;
     onToggleAboutPopover: () => void;
+    /** Weight-mixer panel open state + toggle (auxSurface "mixer"). */
+    mixerOpen: boolean;
+    onToggleMixer: () => void;
     isFullscreen: boolean;
     onToggleFullscreen: () => void;
 }
@@ -261,6 +265,8 @@ export function ViewControls({
     trailSaving,
     aboutPopoverOpen,
     onToggleAboutPopover,
+    mixerOpen,
+    onToggleMixer,
     isFullscreen,
     onToggleFullscreen,
 }: ViewControlsProps) {
@@ -443,6 +449,16 @@ export function ViewControls({
                     </div>
                 )}
             </div>
+            <button
+                type="button"
+                onClick={onToggleMixer}
+                aria-expanded={mixerOpen}
+                className={`${BTN} ${mixerOpen ? "bg-white/10 text-white" : ""}`}
+                title="Similarity mixer: reweigh what counts as similar"
+                aria-label="Similarity mixer"
+            >
+                <SlidersHorizontal className="w-5 h-5" />
+            </button>
             <div className="relative">
                 <button
                     type="button"

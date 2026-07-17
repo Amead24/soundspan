@@ -3038,6 +3038,68 @@ class ApiClient {
         }>("/vibe/map");
     }
 
+    /** Per-track similarity components against a seed, index-aligned to the
+     * map payload's tracks order (409 body carries stale:true when no
+     * projection is cached yet). */
+    async getVibeMixerComponents(trackId: string) {
+        return this.request<{
+            seedId: string;
+            computedAt: string;
+            count: number;
+            clapSim: Array<number | null>;
+            lyricSim: Array<number | null>;
+        }>(`/vibe/mixer/${encodeURIComponent(trackId)}`);
+    }
+
+    async getSimilarityWeights() {
+        return this.request<{
+            weights: Record<string, number>;
+            isDefault: boolean;
+        }>("/vibe/weights");
+    }
+
+    /** Pass null to reset to defaults. */
+    async saveSimilarityWeights(weights: Record<string, number> | null) {
+        return this.request<{
+            weights: Record<string, number>;
+            isDefault: boolean;
+        }>("/vibe/weights", {
+            method: "PUT",
+            body: JSON.stringify(weights),
+        });
+    }
+
+    /** Shape mirrors components/vibe/types.ts XrayResponse (api.ts declares
+     * response types inline — never imports from components/). */
+    async getVibeXray(a: string, b: string) {
+        return this.request<{
+            a: { id: string; title: string; artist: string; albumId: string | null; coverUrl: string | null };
+            b: { id: string; title: string; artist: string; albumId: string | null; coverUrl: string | null };
+            overall: { similarity: number; weights: "custom" | "default" };
+            clap: { available: boolean; similarity: number | null };
+            features: Array<{
+                key: "energy" | "valence" | "bpm" | "danceability" | "acousticness" | "instrumentalness";
+                a: number | null;
+                b: number | null;
+                similarity: number;
+            }>;
+            keys: {
+                a: { key: string; scale: string | null } | null;
+                b: { key: string; scale: string | null } | null;
+                similarity: number;
+            };
+            lyrics: {
+                aStatus: "analyzed" | "instrumental" | "unknown";
+                bStatus: "analyzed" | "instrumental" | "unknown";
+                semanticSimilarity: number | null;
+                sentiment: { a: number; b: number; similarity: number } | null;
+                lexical: { a: number; b: number; similarity: number } | null;
+                reading: { a: number; b: number; similarity: number } | null;
+            };
+            sharedNeighbors: Array<{ id: string; title: string; artist: string; albumId: string | null; coverUrl: string | null }>;
+        }>(`/vibe/xray?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+    }
+
     async getVibePath(fromId: string, toId: string, steps = 5) {
         return this.request<{
             from: string;

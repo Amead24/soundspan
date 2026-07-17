@@ -41,6 +41,16 @@ export interface MapCanvasProps {
     dimUnhighlighted?: boolean;
     /** Currently hovered track id (enlarged, opaque). */
     hoveredId?: string | null;
+    /**
+     * Mixer lens: index-aligned blended similarity scores (0..1, NaN =
+     * unknown). When present (and length matches), dot color comes from
+     * `scoreColors` and baseline alpha scales with the score — the mood tint
+     * is suspended while the lens is active. Hover/highlight/mask behavior
+     * layers exactly as without scores.
+     */
+    scoreValues?: Float32Array | null;
+    /** Precomputed hex LUT for score colors (vibeMixer.buildScoreColorLut). */
+    scoreColors?: readonly string[];
     className?: string;
     // NOTE: wheel is deliberately NOT a React prop — React attaches wheel
     // listeners passively (preventDefault is a no-op), so the container owns a
@@ -55,6 +65,9 @@ export interface MapCanvasProps {
 const TAU = Math.PI * 2;
 const DIM_ALPHA = 0.05; // filtered-out dots
 const BASE_ALPHA = 0.72;
+const SCORE_UNKNOWN_COLOR = "#374151"; // NaN score (no data for the pair)
+const SCORE_UNKNOWN_ALPHA = 0.12;
+const SCORE_MIN_ALPHA = 0.15; // alpha = 0.15 + 0.85·score in score mode
 const NONMATCH_ALPHA = 0.12; // visible-but-not-a-spotlight-match while spotlighting
 const HOVER_BOOST = 2.5; // hover radius = r + HOVER_BOOST
 const GLOW_BOOST = 2.5; // spotlight-match radius = r + GLOW_BOOST
@@ -72,6 +85,8 @@ export function MapCanvas(props: MapCanvasProps) {
         highlightIds,
         dimUnhighlighted,
         hoveredId,
+        scoreValues,
+        scoreColors,
         className,
         onPointerDown,
         onPointerMove,
@@ -99,6 +114,12 @@ export function MapCanvas(props: MapCanvasProps) {
 
         const hasHighlight = !!highlightIds && highlightIds.size > 0;
         const hasPositions = !!positions && positions.length >= tracks.length * 2;
+        const hasScores =
+            !!scoreValues &&
+            scoreValues.length === tracks.length &&
+            !!scoreColors &&
+            scoreColors.length > 0;
+        const lutSteps = hasScores ? scoreColors!.length : 0;
         const fitScale = fitViewport({ width, height }).scale;
         const r = computeDotRadius(viewport.scale, fitScale);
 
@@ -131,6 +152,26 @@ export function MapCanvas(props: MapCanvasProps) {
             const isMatch = hasHighlight && highlightIds!.has(t.id);
             const isHovered = visible && hoveredId === t.id;
 
+            // Score lens: color from the LUT, baseline alpha from the score.
+            // Computed before the branch chain so hover/highlight/mask keep
+            // their exact alpha/radius overrides on top of the lens color.
+            let scoreColor: string | null = null;
+            let scoreAlpha = BASE_ALPHA;
+            if (hasScores) {
+                const s = scoreValues![i];
+                if (Number.isNaN(s)) {
+                    scoreColor = SCORE_UNKNOWN_COLOR;
+                    scoreAlpha = SCORE_UNKNOWN_ALPHA;
+                } else {
+                    const idx = Math.min(
+                        lutSteps - 1,
+                        Math.max(0, Math.floor(s * lutSteps))
+                    );
+                    scoreColor = scoreColors![idx];
+                    scoreAlpha = SCORE_MIN_ALPHA + 0.85 * s;
+                }
+            }
+
             let radius = r;
             let alpha: number;
             if (!visible) {
@@ -146,10 +187,10 @@ export function MapCanvas(props: MapCanvasProps) {
                     alpha = dimUnhighlighted ? NONMATCH_ALPHA : BASE_ALPHA;
                 }
             } else {
-                alpha = BASE_ALPHA;
+                alpha = hasScores ? scoreAlpha : BASE_ALPHA;
             }
 
-            const color = getMoodColor(t.dominantMood);
+            const color = scoreColor ?? getMoodColor(t.dominantMood);
 
             // Soft glow ring behind spotlight matches.
             if (visible && isMatch) {
@@ -177,6 +218,8 @@ export function MapCanvas(props: MapCanvasProps) {
         highlightIds,
         dimUnhighlighted,
         hoveredId,
+        scoreValues,
+        scoreColors,
     ]);
 
     useEffect(() => {
