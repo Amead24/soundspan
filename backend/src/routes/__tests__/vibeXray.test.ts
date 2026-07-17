@@ -255,4 +255,101 @@ describe("GET /api/vibe/xray", () => {
         expect(res.body.keys.a).toBeNull();
         expect(res.body.keys.b).toEqual({ key: "E", scale: "minor" });
     });
+
+    // The closeness math exists in three deliberate copies: the scoring SQL,
+    // these route helpers, and frontend simMath.ts. The frontend pins its copy
+    // with enumerated numeric vectors (frontend/tests/unit/simMath.test.ts,
+    // "closeness functions match the plan's §core-math definitions"); the two
+    // cases below run the SAME vectors through the route so all three copies
+    // share one set of pins. Change any copy and its pin together, never one
+    // side alone. (Review finding B4.)
+    it("closeness helpers reproduce the simMath numeric vectors (set 1)", async () => {
+        mockQueryRaw.mockResolvedValueOnce([
+            fullRow({
+                a_energy: 0.8, b_energy: 0.3, // featureCloseness(0.8, 0.3) = 0.5
+                a_valence: null, b_valence: 0.5, // null coalesces to 0.5 → 1.0
+                a_sentiment: -1, b_sentiment: 1, // sentimentCloseness(-1, 1) = 0
+                a_lexical: 20, b_lexical: 80, // lexicalCloseness(20, 80) = 0.5
+                a_reading: 2, b_reading: 8, // readingCloseness(2, 8) = 0.5
+            }),
+        ]);
+
+        const res = createRes();
+        await xrayHandler(makeReq(), res);
+
+        const byKey = Object.fromEntries(
+            res.body.features.map((f: any) => [f.key, f.similarity])
+        );
+        expect(byKey.energy).toBeCloseTo(0.5, 9);
+        expect(byKey.valence).toBeCloseTo(1.0, 9);
+        expect(res.body.lyrics.sentiment.similarity).toBeCloseTo(0, 9);
+        expect(res.body.lyrics.lexical.similarity).toBeCloseTo(0.5, 9);
+        expect(res.body.lyrics.reading.similarity).toBeCloseTo(0.5, 9);
+    });
+
+    it("closeness helpers reproduce the simMath numeric vectors (set 2: clamps)", async () => {
+        mockQueryRaw.mockResolvedValueOnce([
+            fullRow({
+                a_sentiment: 0.5, b_sentiment: 0.5, // sentimentCloseness = 1
+                a_lexical: 200, b_lexical: 120, // both clamp to 120 → 1
+                a_reading: 0, b_reading: 30, // gap clamps at 12 → 0
+            }),
+        ]);
+
+        const res = createRes();
+        await xrayHandler(makeReq(), res);
+
+        expect(res.body.lyrics.sentiment.similarity).toBeCloseTo(1, 9);
+        expect(res.body.lyrics.lexical.similarity).toBeCloseTo(1, 9);
+        expect(res.body.lyrics.reading.similarity).toBeCloseTo(0, 9);
+    });
+
+    // D5 pin: for "completed analysis with a NULL scalar" — impossible today
+    // (the sidecar writes results in one transaction) — the x-ray adds the
+    // FULL lyric weight mass to the blend denominator once semantic+sentiment
+    // are present, while the unfillable lexical/reading terms add nothing to
+    // the numerator (the SQL blend would COALESCE them instead; the frontend
+    // matches this x-ray shape). This exact-value pin keeps a future
+    // partial-write path from silently changing which of the three behaviors
+    // ships.
+    it("blend denominator keeps the full lyric mass when lexical/reading scalars are null", async () => {
+        (prisma.user.findUnique as jest.Mock).mockResolvedValueOnce({
+            similarityWeights: {
+                clap: 0.4,
+                lyricSemantic: 0.2,
+                lyricSentiment: 0.2,
+                lyricLexical: 0.1,
+                lyricReading: 0.1,
+                energy: 0,
+                valence: 0,
+                bpm: 0,
+                danceability: 0,
+                acousticness: 0,
+                instrumentalness: 0,
+                key: 0,
+            },
+        });
+        mockQueryRaw.mockResolvedValueOnce([
+            fullRow({
+                clap_sim: 0.8,
+                lyric_sim: 0.5,
+                a_sentiment: 0.5,
+                b_sentiment: 0.5,
+                a_lexical: null,
+                b_lexical: null,
+                a_reading: null,
+                b_reading: null,
+            }),
+        ]);
+
+        const res = createRes();
+        await xrayHandler(makeReq(), res);
+
+        expect(res.body.lyrics.lexical).toBeNull();
+        expect(res.body.lyrics.reading).toBeNull();
+        expect(res.body.overall.weights).toBe("custom");
+        // num = 0.4·0.8 + 0.2·0.5 + 0.2·1 (+ nothing for lexical/reading)
+        // den = 0.4 + full lyricSum 0.6 = 1.0  →  0.62
+        expect(res.body.overall.similarity).toBeCloseTo(0.62, 9);
+    });
 });
