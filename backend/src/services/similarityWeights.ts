@@ -68,21 +68,15 @@ export const DEFAULT_SIMILARITY_WEIGHTS: SimilarityWeights = {
 
 const weightValue = z.number().min(0).max(1);
 
+// Derived from SIMILARITY_COMPONENTS so the component list stays the single
+// place a new dimension is declared (the schema can't silently miss one). The
+// cast is sound: the entries are built directly from that const list.
+const weightShape = Object.fromEntries(
+    SIMILARITY_COMPONENTS.map((key) => [key, weightValue])
+) as Record<SimilarityComponent, typeof weightValue>;
+
 export const similarityWeightsSchema = z
-    .object({
-        clap: weightValue,
-        lyricSemantic: weightValue,
-        lyricSentiment: weightValue,
-        lyricLexical: weightValue,
-        lyricReading: weightValue,
-        energy: weightValue,
-        valence: weightValue,
-        bpm: weightValue,
-        danceability: weightValue,
-        acousticness: weightValue,
-        instrumentalness: weightValue,
-        key: weightValue,
-    })
+    .object(weightShape)
     .strict()
     .refine((w) => Object.values(w).some((v) => v > 0), {
         message: "At least one weight must be greater than zero",
