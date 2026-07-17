@@ -436,18 +436,25 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
                 layoutRafRef.current = null;
             }
 
-            // Reduced motion: snap straight to the target buffer in a single
-            // setState — no rAF loop, no interpolation.
-            if (reducedMotion) {
-                setRawPositions(to);
-                return;
-            }
-
             if (layoutBuffersRef.current[0].length !== to.length) {
                 layoutBuffersRef.current = [
                     new Float32Array(to.length),
                     new Float32Array(to.length),
                 ];
+            }
+
+            // Reduced motion: snap to the target in a single setState — no
+            // rAF loop, no interpolation. Snap a COPY, never `to` itself:
+            // the force path recomputes into forceTargetRef IN PLACE, so
+            // state aliasing that buffer means the next snap is an Object.is
+            // bail-out (same reference) — no re-render, canvas frozen at the
+            // old displacement while hit-testing reads the new one.
+            if (reducedMotion) {
+                const outBuf = layoutBuffersRef.current[layoutFlipRef.current % 2];
+                layoutFlipRef.current += 1;
+                outBuf.set(to);
+                setRawPositions(outBuf);
+                return;
             }
 
             // Freeze the start positions: `from` is usually the live
