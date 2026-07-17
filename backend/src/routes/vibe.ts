@@ -8,6 +8,12 @@ import { redisClient } from "../utils/redis";
 import { parseEmbedding } from "../utils/embedding";
 import { requireAuth } from "../middleware/auth";
 import { findSimilarTracks } from "../services/hybridSimilarity";
+import {
+    DEFAULT_SIMILARITY_WEIGHTS,
+    isDefaultWeights,
+    resolveUserWeights,
+    similarityWeightsSchema,
+} from "../services/similarityWeights";
 import { computeMapProjection } from "../services/umapProjection";
 import {
     applyTrackPreferenceOrderBias,
@@ -866,6 +872,102 @@ router.post("/alchemy", requireAuth, async (req, res) => {
  *       401:
  *         description: Not authenticated
  */
+/** Resolve a user's stored similarity weights (defaults when unset/invalid). */
+async function loadUserSimilarityWeights(userId: string | undefined) {
+    if (!userId) return { ...DEFAULT_SIMILARITY_WEIGHTS };
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { similarityWeights: true },
+    });
+    return resolveUserWeights(user?.similarityWeights);
+}
+
+/**
+ * @openapi
+ * /api/vibe/weights:
+ *   get:
+ *     summary: Get the current user's similarity component weights
+ *     description: Returns the user's weight-mixer settings for similarity scoring, falling back to the defaults when none are stored. isDefault indicates whether the stored mix equals the defaults.
+ *     tags: [Vibe]
+ *     security:
+ *       - sessionAuth: []
+ *       - apiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: The user's weights and whether they equal the defaults
+ *       401:
+ *         description: Not authenticated
+ *   put:
+ *     summary: Save the current user's similarity component weights
+ *     description: Persists a full 12-component weight mix (each value 0..1, at least one > 0). Send null to reset to defaults. Applied to /api/vibe/similar scoring (and everything built on it, e.g. Travel) immediately.
+ *     tags: [Vibe]
+ *     security:
+ *       - sessionAuth: []
+ *       - apiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             nullable: true
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Weights saved (or reset when null was sent)
+ *       400:
+ *         description: Invalid weights payload
+ *       401:
+ *         description: Not authenticated
+ */
+router.get("/weights", requireAuth, async (req, res) => {
+    try {
+        const weights = await loadUserSimilarityWeights(req.user?.id);
+        res.json({ weights, isDefault: isDefaultWeights(weights) });
+    } catch (error) {
+        logger.error("Get similarity weights error:", error);
+        res.status(500).json({ error: "Failed to load similarity weights" });
+    }
+});
+
+router.put("/weights", requireAuth, async (req, res) => {
+    try {
+        const userId = req.user!.id;
+
+        // null body = reset to defaults (clears the stored mix)
+        if (req.body === null || req.body === undefined) {
+            await prisma.user.update({
+                where: { id: userId },
+                data: { similarityWeights: Prisma.DbNull },
+            });
+            return res.json({
+                weights: { ...DEFAULT_SIMILARITY_WEIGHTS },
+                isDefault: true,
+            });
+        }
+
+        const parsed = similarityWeightsSchema.safeParse(req.body);
+        if (!parsed.success) {
+            return res.status(400).json({
+                error: "Invalid similarity weights",
+                details: parsed.error.issues,
+            });
+        }
+
+        await prisma.user.update({
+            where: { id: userId },
+            data: { similarityWeights: parsed.data },
+        });
+
+        res.json({
+            weights: parsed.data,
+            isDefault: isDefaultWeights(parsed.data),
+        });
+    } catch (error) {
+        logger.error("Save similarity weights error:", error);
+        res.status(500).json({ error: "Failed to save similarity weights" });
+    }
+});
+
 router.get<{ trackId: string }>("/similar/:trackId", requireAuth, async (req, res) => {
     try {
         const { trackId } = req.params;
@@ -875,7 +977,8 @@ router.get<{ trackId: string }>("/similar/:trackId", requireAuth, async (req, re
             100
         );
 
-        const tracks = await findSimilarTracks(trackId, limit);
+        const weights = await loadUserSimilarityWeights(userId);
+        const tracks = await findSimilarTracks(trackId, limit, weights);
         let weightedTracks = tracks;
 
         const preferenceScores = await buildTrackPreferenceScoreMapForUser(

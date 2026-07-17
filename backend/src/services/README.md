@@ -59,6 +59,7 @@ Start-here guide for business logic modules in `backend/src/services`.
 | `backend/src/services/listenTogetherSocket.ts` | Core |
 | `backend/src/services/listenTogetherStateStore.ts` | Core |
 | `backend/src/services/lyrics.ts` | Core |
+| `backend/src/services/lyricsAnalysisCleanup.ts` | Core |
 | `backend/src/services/m3uParser.ts` | Core |
 | `backend/src/services/moodBucketService.ts` | Core |
 | `backend/src/services/musicbrainz.ts` | Core |
@@ -85,6 +86,7 @@ Start-here guide for business logic modules in `backend/src/services`.
 | `backend/src/services/segmented-streaming/segmentService.ts` | Segmented Streaming |
 | `backend/src/services/segmented-streaming/sessionService.ts` | Segmented Streaming |
 | `backend/src/services/segmented-streaming/trace.ts` | Segmented Streaming |
+| `backend/src/services/similarityWeights.ts` | Core |
 | `backend/src/services/simpleDownloadManager.ts` | Core |
 | `backend/src/services/socialPresenceEvents.ts` | Core |
 | `backend/src/services/soulseek.ts` | Core |
@@ -98,7 +100,6 @@ Start-here guide for business logic modules in `backend/src/services`.
 | `backend/src/services/trackReconciliation.ts` | Core |
 | `backend/src/services/umapProjection.ts` | Core |
 | `backend/src/services/unifiedTrackResponse.ts` | Core |
-| `backend/src/services/lyricsAnalysisCleanup.ts` | Core |
 | `backend/src/services/vibeAnalysisCleanup.ts` | Core |
 | `backend/src/services/vibeVocabulary.ts` | Core |
 | `backend/src/services/wikidata.ts` | Core |

@@ -26,6 +26,9 @@ model User {
   twoFactorRecoveryCodes String?
   profilePicture         Bytes?
   moodMixParams          Json?
+  // User-adjustable similarity component weights ("weight mixer"); NULL =
+  // defaults. Shape validated by similarityWeightsSchema at the write site.
+  similarityWeights      Json?
   tokenVersion           Int                   @default(0)
   createdAt              DateTime              @default(now())
   apiKeys                ApiKey[]

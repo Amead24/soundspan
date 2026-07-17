@@ -23,6 +23,11 @@ jest.mock("../../utils/db", () => ({
             count: jest.fn(),
             findUnique: jest.fn(),
         },
+        user: {
+            // /similar resolves the caller's similarity weights; null =
+            // defaults, which keeps this suite's expectations unchanged.
+            findUnique: jest.fn(async () => null),
+        },
         likedTrack: {
             findMany: jest.fn(),
         },
