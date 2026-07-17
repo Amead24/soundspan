@@ -91,7 +91,12 @@ import {
     type MapDims,
     type Viewport,
 } from "./mapViewport";
-import { buildPositions, computeSpreadPositions, lerpPositions } from "./mapLayout";
+import {
+    buildPositions,
+    computeSpreadPositions,
+    lerpPositions,
+    type LayoutMode,
+} from "./mapLayout";
 import { upcomingOnMapPoints } from "./flightPlan";
 import {
     collectHits,
@@ -130,7 +135,6 @@ const SEARCH_LOCATE_ZOOM = 8;
  */
 export const MOBILE_PLAYER_CLEARANCE_PX = 64;
 
-type LayoutMode = "natural" | "spread";
 const LAYOUT_STORAGE_KEY = "vibe:layout-mode";
 const LAYOUT_ANIM_MS = 400;
 /** Recompute "fade" trail-mode opacity on this cadence while mounted. */

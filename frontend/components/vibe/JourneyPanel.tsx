@@ -10,7 +10,11 @@
 
 import { ListPlus, Loader2, MapPin, Play, Route, X } from "lucide-react";
 import { VIBE_PANEL_CLASS, VIBE_PANEL_STYLE, PANEL_CLOSE_CLASS } from "./TravelPanel";
-import type { JourneyView } from "./useVibeMode";
+import {
+    MAX_JOURNEY_STEPS,
+    MIN_JOURNEY_STEPS,
+    type JourneyView,
+} from "./useVibeMode";
 import { VibeTrackRow } from "./VibeTrackRow";
 
 /** Mood buckets thinner than this can't seed a journey (mirrors the backend). */
@@ -128,8 +132,8 @@ export function JourneyPanel({ view }: { view: JourneyView }) {
                 <span className="w-10">Steps</span>
                 <input
                     type="range"
-                    min={4}
-                    max={16}
+                    min={MIN_JOURNEY_STEPS}
+                    max={MAX_JOURNEY_STEPS}
                     step={1}
                     value={steps}
                     aria-label="Journey steps"

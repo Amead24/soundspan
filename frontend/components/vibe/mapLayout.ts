@@ -13,6 +13,10 @@
  * animation frame without allocating.
  */
 
+/** The two layouts the toggle animates between. Single home for the union —
+ *  VibeMap (state owner) and ViewControls (toggle button) both import it. */
+export type LayoutMode = "natural" | "spread";
+
 /** Minimal shape the pure layout core needs. */
 export interface PositionableTrack {
     x: number;

@@ -45,7 +45,6 @@ export interface SpotlightSearchProps {
     onClear: () => void;
     /** Called with a track id when the user picks a local match. */
     onLocate: (id: string) => void;
-    className?: string;
 }
 
 const WARM_UP_MS = 3000;
@@ -60,7 +59,6 @@ export function SpotlightSearch({
     onResults,
     onClear,
     onLocate,
-    className,
 }: SpotlightSearchProps) {
     const [query, setQuery] = useState("");
     const [loading, setLoading] = useState(false);
@@ -214,7 +212,7 @@ export function SpotlightSearch({
     // Collapsed magnifier (small screens only). Expands the pill and focuses it.
     if (isSmall && !expanded) {
         return (
-            <div className={className ?? "pointer-events-auto"}>
+            <div className="pointer-events-auto">
                 <button
                     type="button"
                     onClick={() => {
@@ -235,7 +233,7 @@ export function SpotlightSearch({
     return (
         <form
             onSubmit={runSearch}
-            className={className ?? "pointer-events-auto"}
+            className="pointer-events-auto"
         >
             <div className="pointer-events-auto relative flex items-center w-[min(80vw,320px)] h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 shadow-lg focus-within:border-white/20 transition-colors">
                 <Search className="pointer-events-none absolute left-3 w-4 h-4 text-gray-400" />

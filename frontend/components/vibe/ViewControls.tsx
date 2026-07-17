@@ -56,15 +56,11 @@ import {
     ZoomOut,
 } from "lucide-react";
 import { Fragment } from "react";
+import type { LayoutMode } from "./mapLayout";
+import type { TrailMode } from "./useSessionTrail";
 import { FILTERABLE_MOODS, VIBE_ACCENTS, getMoodColor, moodLabel } from "./types";
 import { ABOUT_DIMENSIONS_INTRO, DIMENSION_COPY } from "./vibeCopy";
 import { MIXER_COMPONENTS } from "./vibeMixer";
-
-export type LayoutMode = "natural" | "spread";
-
-/** "on": full trail. "fade": age-fades and eventually drops old entries.
- *  "off": hidden entirely (beacon + flight plan unaffected). */
-export type TrailMode = "on" | "fade" | "off";
 
 const TRAIL_MODE_OPTIONS: readonly { mode: TrailMode; label: string }[] = [
     { mode: "on", label: "On" },

@@ -1474,7 +1474,7 @@ function distanceToSimilarity(distance: number): number {
 }
 
 // Minimum similarity threshold for search results
-// 0.65 = 65% match, meaning distance <= 0.7
+// 0.60 = 60% match, meaning distance <= 0.8
 const MIN_SEARCH_SIMILARITY = 0.60;
 
 interface TextEmbedResponsePayload {

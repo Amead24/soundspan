@@ -51,7 +51,6 @@ export interface MapCanvasProps {
     scoreValues?: Float32Array | null;
     /** Precomputed hex LUT for score colors (vibeMixer.buildScoreColorLut). */
     scoreColors?: readonly string[];
-    className?: string;
     // NOTE: wheel is deliberately NOT a React prop — React attaches wheel
     // listeners passively (preventDefault is a no-op), so the container owns a
     // native non-passive listener instead. See VibeMap's wheel effect.
@@ -87,7 +86,6 @@ export function MapCanvas(props: MapCanvasProps) {
         hoveredId,
         scoreValues,
         scoreColors,
-        className,
         onPointerDown,
         onPointerMove,
         onPointerUp,
@@ -240,7 +238,7 @@ export function MapCanvas(props: MapCanvasProps) {
     return (
         <canvas
             ref={canvasRef}
-            className={className ?? "absolute inset-0 touch-none"}
+            className="absolute inset-0 touch-none"
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}

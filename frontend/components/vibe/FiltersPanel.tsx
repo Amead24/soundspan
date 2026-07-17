@@ -41,8 +41,6 @@ export interface FiltersPanelProps {
     reducedMotion?: boolean;
     /** Small-screen bottom-sheet styling for the expanded card. */
     compact?: boolean;
-    /** Mood keys to render; defaults to every filterable mood (incl. neutral). */
-    moods?: readonly string[];
 }
 
 /** Full-width dual-thumb range. One 6px track, two overlapped inputs whose
@@ -160,8 +158,10 @@ export function FiltersPanel({
     onExpandedChange,
     reducedMotion,
     compact,
-    moods = FILTERABLE_MOODS,
 }: FiltersPanelProps) {
+    // Chip list = every filterable mood (incl. neutral) — same single source
+    // as useMapFilters' default whitelist, so the two can't drift apart.
+    const moods = FILTERABLE_MOODS;
     const {
         activeMoods,
         energyRange,
