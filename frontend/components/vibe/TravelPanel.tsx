@@ -16,8 +16,9 @@
  * feature values are already in the candidate payload / origin lookup.
  */
 
-import { ChevronDown, ChevronRight, Loader2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { useState } from "react";
+import { VibePanel } from "./panelChrome";
 import { COMPASS_DIRECTIONS, type CompassDirection } from "./travelCompass";
 import type { CompassCandidate } from "./travelCompass";
 import type { TravelView, VibeFeatures } from "./useVibeMode";
@@ -31,28 +32,6 @@ const DIRECTION_LABEL: Record<CompassDirection, string> = {
     calmer: "Calmer",
     "more-energetic": "Energetic",
 };
-
-/** Shared glass surface for the F2 mode panels: floats over the viz, sits to
- *  the left of the top-right ViewControls stack on desktop, and drops to a
- *  bottom sheet below sm. Pair with VIBE_PANEL_STYLE, which anchors the sheet
- *  above the mobile mini player (--vibe-binset, 0px on desktop/fullscreen). */
-export const VIBE_PANEL_CLASS =
-    "absolute z-40 inset-x-0 sm:inset-x-auto sm:right-20 sm:top-3 " +
-    "sm:w-72 max-h-[75%] sm:max-h-[calc(100%-1.5rem)] overflow-y-auto " +
-    "bg-black/60 border border-white/10 rounded-t-xl sm:rounded-xl " +
-    "backdrop-blur-md px-3 py-3 shadow-lg";
-
-/** Bottom anchor for the mode panels (was `bottom-0`; see VIBE_PANEL_CLASS). */
-export const VIBE_PANEL_STYLE: React.CSSProperties = {
-    bottom: "var(--vibe-binset, 0px)",
-};
-
-/** Close (✕) button with a humane ≥40px hit area, negatively margined so it
- *  doesn't inflate the panel header. */
-export const PANEL_CLOSE_CLASS =
-    "ml-auto -mr-1.5 -my-1 inline-flex items-center justify-center w-10 h-10 " +
-    "rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors " +
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60";
 
 const FEATURE_LABELS: ReadonlyArray<{ key: keyof VibeFeatures; label: string }> = [
     { key: "energy", label: "Energy" },
@@ -225,24 +204,12 @@ export function TravelPanel({ view }: { view: TravelView }) {
         offMapNeighbors.length === 0;
 
     return (
-        <div
-            className={VIBE_PANEL_CLASS}
-            style={VIBE_PANEL_STYLE}
-            data-vibe-panel="travel"
+        <VibePanel
+            title="Travel"
+            onClose={close}
+            closeLabel="Exit travel (Esc)"
+            dataVibePanel="travel"
         >
-            <div className="flex items-center gap-2 mb-2">
-                <span className="text-sm font-semibold text-white">Travel</span>
-                <button
-                    type="button"
-                    onClick={close}
-                    aria-label="Exit travel (Esc)"
-                    title="Exit travel (Esc)"
-                    className={PANEL_CLOSE_CLASS}
-                >
-                    <X className="w-4 h-4" />
-                </button>
-            </div>
-
             <p className="text-xs text-gray-400 mb-1">
                 From <span className="text-white">{currentTitle}</span>
             </p>
@@ -335,6 +302,6 @@ export function TravelPanel({ view }: { view: TravelView }) {
                     />
                 ))}
             </div>
-        </div>
+        </VibePanel>
     );
 }

@@ -8,18 +8,13 @@
  * the ranked top matches. All state lives in useMixer; this is presentation.
  */
 
-import { useMemo, useState } from "react";
-import { Loader2, LocateFixed, Music2, RotateCcw, X } from "lucide-react";
-import { searchMapTracks } from "./mapSearch";
+import { Loader2, LocateFixed, Music2, RotateCcw } from "lucide-react";
+import { VibePanel } from "./panelChrome";
+import { TrackSearchPicker } from "./TrackSearchPicker";
 import type { MixerState } from "./useMixer";
 import type { MapTrack } from "./types";
 import type { MixerComponent } from "./vibeMixer";
 import { DIMENSION_COPY } from "./vibeCopy";
-import {
-    PANEL_CLOSE_CLASS,
-    VIBE_PANEL_CLASS,
-    VIBE_PANEL_STYLE,
-} from "./TravelPanel";
 
 const AUDIO_GROUP: MixerComponent[] = [
     "clap",
@@ -86,51 +81,24 @@ export function MixerPanel({
     onLocate,
     onClose,
 }: MixerPanelProps) {
-    const [query, setQuery] = useState("");
-    const matches = useMemo(
-        () => (mixer.seedId ? [] : searchMapTracks(tracks, query, 6)),
-        [mixer.seedId, tracks, query]
-    );
-
-    const pickSeed = (id: string) => {
-        mixer.setSeed(id);
-        setQuery("");
-    };
-
     return (
-        // VIBE_PANEL_STYLE must ride along with VIBE_PANEL_CLASS: it carries
-        // the bottom anchor that makes the below-sm layout an actual bottom
-        // sheet and lifts it above the mobile mini player (--vibe-binset).
-        <div
-            className={VIBE_PANEL_CLASS}
-            style={VIBE_PANEL_STYLE}
-            data-testid="mixer-panel"
+        <VibePanel
+            title="Similarity mixer"
+            headerExtra={
+                <button
+                    type="button"
+                    onClick={mixer.resetWeights}
+                    title="Reset all sliders to the defaults"
+                    aria-label="Reset all sliders to the defaults"
+                    className="ml-auto inline-flex items-center justify-center w-10 h-10 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+                >
+                    <RotateCcw className="w-4 h-4" />
+                </button>
+            }
+            onClose={onClose}
+            closeLabel="Close mixer"
+            testId="mixer-panel"
         >
-            <div className="flex items-center justify-between gap-2 mb-2">
-                <h3 className="text-sm font-semibold text-white">
-                    Similarity mixer
-                </h3>
-                <div className="flex items-center gap-1">
-                    <button
-                        type="button"
-                        onClick={mixer.resetWeights}
-                        title="Reset all sliders to the defaults"
-                        aria-label="Reset all sliders to the defaults"
-                        className="inline-flex items-center justify-center w-10 h-10 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
-                    >
-                        <RotateCcw className="w-4 h-4" />
-                    </button>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        aria-label="Close mixer"
-                        className={PANEL_CLOSE_CLASS}
-                    >
-                        <X className="w-4 h-4" />
-                    </button>
-                </div>
-            </div>
-
             {/* Seed picker */}
             {mixer.seedTrack ? (
                 <div className="flex items-center gap-2 mb-3 rounded-lg bg-white/5 px-2 py-1.5">
@@ -153,43 +121,18 @@ export function MixerPanel({
                 </div>
             ) : (
                 <div className="mb-3">
-                    <input
-                        type="text"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
+                    <TrackSearchPicker
+                        tracks={tracks}
+                        limit={6}
                         placeholder="Pick a seed track…"
-                        aria-label="Pick a seed track"
-                        className="w-full rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-400/60"
+                        ariaLabel="Pick a seed track"
+                        shortcuts={
+                            nowPlayingId
+                                ? [{ id: nowPlayingId, label: "Use now playing" }]
+                                : []
+                        }
+                        onPick={mixer.setSeed}
                     />
-                    {matches.length > 0 && (
-                        <ul className="mt-1 rounded-lg bg-black/40 border border-white/10 divide-y divide-white/5 max-h-44 overflow-y-auto">
-                            {matches.map((t) => (
-                                <li key={t.id}>
-                                    <button
-                                        type="button"
-                                        onClick={() => pickSeed(t.id)}
-                                        className="w-full text-left px-2.5 py-1.5 hover:bg-white/10"
-                                    >
-                                        <span className="block text-sm text-white truncate">
-                                            {t.title}
-                                        </span>
-                                        <span className="block text-xs text-gray-400 truncate">
-                                            {t.artist}
-                                        </span>
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                    {nowPlayingId && (
-                        <button
-                            type="button"
-                            onClick={() => pickSeed(nowPlayingId)}
-                            className="mt-1.5 w-full rounded-lg bg-indigo-500/20 text-indigo-200 text-sm py-1.5 hover:bg-indigo-500/30"
-                        >
-                            Use now playing
-                        </button>
-                    )}
                 </div>
             )}
 
@@ -329,6 +272,6 @@ export function MixerPanel({
                     </div>
                 )}
             </div>
-        </div>
+        </VibePanel>
     );
 }

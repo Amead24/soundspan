@@ -34,11 +34,7 @@ import {
     type DropPosition,
 } from "@/components/track/reorderDnd";
 import { isEpisodeQueueItem, type QueueItem } from "@/lib/queue-item";
-import {
-    VIBE_PANEL_CLASS,
-    VIBE_PANEL_STYLE,
-    PANEL_CLOSE_CLASS,
-} from "./TravelPanel";
+import { VibePanel } from "./panelChrome";
 
 export interface QueuePanelProps {
     /** Full mixed-media queue (tracks + podcast episodes) — same shape as
@@ -115,23 +111,13 @@ export function QueuePanel({
     };
 
     return (
-        <div
-            className={VIBE_PANEL_CLASS}
-            style={VIBE_PANEL_STYLE}
-            data-vibe-panel="queue"
+        <VibePanel
+            title="Queue"
+            onClose={onClose}
+            closeLabel="Close queue"
+            closeTitle="Close queue (Esc)"
+            dataVibePanel="queue"
         >
-            <div className="flex items-center gap-2 mb-2">
-                <span className="text-sm font-semibold text-white">Queue</span>
-                <button
-                    type="button"
-                    onClick={onClose}
-                    aria-label="Close queue"
-                    title="Close queue (Esc)"
-                    className={PANEL_CLOSE_CLASS}
-                >
-                    <X className="w-4 h-4" />
-                </button>
-            </div>
 
             {current && (
                 <div className="flex items-center gap-2 px-2 py-1.5 mb-1.5 rounded-lg bg-indigo-500/10 border border-indigo-400/20">
@@ -274,6 +260,6 @@ export function QueuePanel({
                     })}
                 </ul>
             )}
-        </div>
+        </VibePanel>
     );
 }

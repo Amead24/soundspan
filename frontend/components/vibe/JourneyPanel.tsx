@@ -8,8 +8,8 @@
  * "drift toward <mood>" button per mood that journeys 12 steps from now-playing.
  */
 
-import { ListPlus, Loader2, MapPin, Play, Route, X } from "lucide-react";
-import { VIBE_PANEL_CLASS, VIBE_PANEL_STYLE, PANEL_CLOSE_CLASS } from "./TravelPanel";
+import { ListPlus, Loader2, MapPin, Play, Route } from "lucide-react";
+import { VibePanel } from "./panelChrome";
 import {
     MAX_JOURNEY_STEPS,
     MIN_JOURNEY_STEPS,
@@ -51,24 +51,13 @@ export function JourneyPanel({ view }: { view: JourneyView }) {
     const driftable = moods.filter((m) => m.trackCount >= MIN_MOOD_TRACKS);
 
     return (
-        <div
-            className={VIBE_PANEL_CLASS}
-            style={VIBE_PANEL_STYLE}
-            data-vibe-panel="journey"
+        <VibePanel
+            title="Journey"
+            icon={<Route className="w-4 h-4 text-indigo-300" />}
+            onClose={close}
+            closeLabel="Exit journey (Esc)"
+            dataVibePanel="journey"
         >
-            <div className="flex items-center gap-2 mb-2">
-                <Route className="w-4 h-4 text-indigo-300" />
-                <span className="text-sm font-semibold text-white">Journey</span>
-                <button
-                    type="button"
-                    onClick={close}
-                    aria-label="Exit journey (Esc)"
-                    title="Exit journey (Esc)"
-                    className={PANEL_CLOSE_CLASS}
-                >
-                    <X className="w-4 h-4" />
-                </button>
-            </div>
 
             <p className="text-xs text-gray-400 mb-2">
                 From <span className="text-white">{fromLabel}</span>
@@ -233,6 +222,6 @@ export function JourneyPanel({ view }: { view: JourneyView }) {
                     </div>
                 </div>
             )}
-        </div>
+        </VibePanel>
     );
 }

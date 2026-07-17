@@ -11,18 +11,14 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeftRight, Loader2, Music2, X } from "lucide-react";
+import { ArrowLeftRight, Loader2, Music2 } from "lucide-react";
 import { api } from "@/lib/api";
-import { searchMapTracks } from "./mapSearch";
+import { VibePanel } from "./panelChrome";
 import { camelotOf } from "./simMath";
+import { TrackSearchPicker, type TrackSearchShortcut } from "./TrackSearchPicker";
 import type { MapTrack, XrayResponse } from "./types";
 import { buildVerdict, formatVerdict } from "./verdict";
 import { DIMENSION_COPY, VERDICT_TEMPLATES } from "./vibeCopy";
-import {
-    PANEL_CLOSE_CLASS,
-    VIBE_PANEL_CLASS,
-    VIBE_PANEL_STYLE,
-} from "./TravelPanel";
 
 export interface XrayPanelProps {
     tracks: MapTrack[];
@@ -49,12 +45,6 @@ function TrackPicker({
     mixerSeedId: string | null;
     onPick: (id: string | null) => void;
 }) {
-    const [query, setQuery] = useState("");
-    const matches = useMemo(
-        () => (picked ? [] : searchMapTracks(tracks, query, 5)),
-        [picked, tracks, query]
-    );
-
     if (picked) {
         return (
             <div className="flex items-center gap-2 rounded-lg bg-white/5 px-2 py-1.5">
@@ -78,60 +68,22 @@ function TrackPicker({
         );
     }
 
+    const shortcuts: TrackSearchShortcut[] = [
+        ...(nowPlayingId ? [{ id: nowPlayingId, label: "Now playing" }] : []),
+        ...(mixerSeedId
+            ? [{ id: mixerSeedId, label: "Mixer seed", tone: "amber" as const }]
+            : []),
+    ];
+
     return (
-        <div>
-            <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={`Song ${label}…`}
-                aria-label={`Pick song ${label}`}
-                className="w-full rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-400/60"
-            />
-            {matches.length > 0 && (
-                <ul className="mt-1 rounded-lg bg-black/40 border border-white/10 divide-y divide-white/5 max-h-40 overflow-y-auto">
-                    {matches.map((t) => (
-                        <li key={t.id}>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    onPick(t.id);
-                                    setQuery("");
-                                }}
-                                className="w-full text-left px-2.5 py-1.5 hover:bg-white/10"
-                            >
-                                <span className="block text-sm text-white truncate">
-                                    {t.title}
-                                </span>
-                                <span className="block text-xs text-gray-400 truncate">
-                                    {t.artist}
-                                </span>
-                            </button>
-                        </li>
-                    ))}
-                </ul>
-            )}
-            <div className="mt-1.5 flex gap-1.5">
-                {nowPlayingId && (
-                    <button
-                        type="button"
-                        onClick={() => onPick(nowPlayingId)}
-                        className="flex-1 rounded-lg bg-indigo-500/20 text-indigo-200 text-xs py-1.5 hover:bg-indigo-500/30"
-                    >
-                        Now playing
-                    </button>
-                )}
-                {mixerSeedId && (
-                    <button
-                        type="button"
-                        onClick={() => onPick(mixerSeedId)}
-                        className="flex-1 rounded-lg bg-amber-500/20 text-amber-200 text-xs py-1.5 hover:bg-amber-500/30"
-                    >
-                        Mixer seed
-                    </button>
-                )}
-            </div>
-        </div>
+        <TrackSearchPicker
+            tracks={tracks}
+            limit={5}
+            placeholder={`Song ${label}…`}
+            ariaLabel={`Pick song ${label}`}
+            shortcuts={shortcuts}
+            onPick={onPick}
+        />
     );
 }
 
@@ -213,29 +165,13 @@ export function XrayPanel({
     const camelotB = xray?.keys.b ? camelotOf(xray.keys.b.key, xray.keys.b.scale) : null;
 
     return (
-        // VIBE_PANEL_STYLE must ride along with VIBE_PANEL_CLASS: it carries
-        // the bottom anchor that makes the below-sm layout an actual bottom
-        // sheet and lifts it above the mobile mini player (--vibe-binset).
-        <div
-            className={VIBE_PANEL_CLASS}
-            style={VIBE_PANEL_STYLE}
-            data-testid="xray-panel"
+        <VibePanel
+            title="Song x-ray"
+            icon={<ArrowLeftRight className="w-4 h-4 text-indigo-300" />}
+            onClose={onClose}
+            closeLabel="Close x-ray"
+            testId="xray-panel"
         >
-            <div className="flex items-center justify-between gap-2 mb-2">
-                <h3 className="flex items-center gap-1.5 text-sm font-semibold text-white">
-                    <ArrowLeftRight className="w-4 h-4 text-indigo-300" />
-                    Song x-ray
-                </h3>
-                <button
-                    type="button"
-                    onClick={onClose}
-                    aria-label="Close x-ray"
-                    className={PANEL_CLOSE_CLASS}
-                >
-                    <X className="w-4 h-4" />
-                </button>
-            </div>
-
             <div className="space-y-2 mb-3">
                 <TrackPicker
                     label="A"
@@ -442,6 +378,6 @@ export function XrayPanel({
                     )}
                 </div>
             )}
-        </div>
+        </VibePanel>
     );
 }
