@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/utils/cn";
 import { api } from "@/lib/api";
@@ -579,7 +580,12 @@ export default function VibePage() {
         );
     }
 
-    return <VibePageContent />;
+    // Suspense boundary for useSearchParams (?tab= deep links) in the content.
+    return (
+        <Suspense fallback={null}>
+            <VibePageContent />
+        </Suspense>
+    );
 }
 
 function VibePageContent() {
@@ -594,7 +600,35 @@ function VibePageContent() {
     const [error, setError] = useState<string | null>(null);
     const [vibeStatus, setVibeStatus] = useState<{ totalTracks: number; embeddedTracks: number } | null>(null);
     const [viewMode, setViewMode] = useState<ViewMode>("comparison");
-    const [vibeTab, setVibeTab] = useState<VibeTab>("explore");
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    // ?tab=map deep-links the map (sidebar nav); anything else is explore.
+    const urlVibeTab: VibeTab = searchParams.get("tab") === "map" ? "map" : "explore";
+    const [vibeTab, setVibeTabState] = useState<VibeTab>(urlVibeTab);
+    const [lastUrlVibeTab, setLastUrlVibeTab] = useState<VibeTab>(urlVibeTab);
+
+    // Follow ?tab= changes from sidebar links and back/forward — same route,
+    // so the page stays mounted and only the search params move. Render-phase
+    // state adjustment per the React "state depends on a prop" pattern.
+    if (lastUrlVibeTab !== urlVibeTab) {
+        setLastUrlVibeTab(urlVibeTab);
+        setVibeTabState(urlVibeTab);
+    }
+
+    const setVibeTab = useCallback((tab: VibeTab) => {
+        setVibeTabState(tab);
+        // Mirror the tab into the URL so sidebar highlighting and copied links
+        // stay truthful. router.replace (not push, not native replaceState):
+        // tab flips shouldn't stack history entries, and only the router
+        // notifies other useSearchParams subscribers like the sidebar —
+        // native history.replaceState verifiably does not. Unrelated params
+        // are preserved.
+        const params = new URLSearchParams(window.location.search);
+        if (tab === "map") params.set("tab", "map");
+        else params.delete("tab");
+        const query = params.toString();
+        router.replace(query ? `/vibe?${query}` : "/vibe", { scroll: false });
+    }, [router]);
     const isMobile = useIsMobile();
     const isTablet = useIsTablet();
     const [searchQuery, setSearchQuery] = useState<string | null>(null);

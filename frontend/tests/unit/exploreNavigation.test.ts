@@ -5,8 +5,8 @@ import {
     MOBILE_QUICK_LINKS,
 } from "../../components/layout/socialNavigation";
 
-test("sidebar navigation has 6 items", () => {
-    assert.equal(SIDEBAR_NAVIGATION.length, 6);
+test("sidebar navigation has 8 items", () => {
+    assert.equal(SIDEBAR_NAVIGATION.length, 8);
 });
 
 test("sidebar navigation starts with Home then Explore", () => {
@@ -14,6 +14,13 @@ test("sidebar navigation starts with Home then Explore", () => {
     assert.equal(SIDEBAR_NAVIGATION[0].href, "/");
     assert.equal(SIDEBAR_NAVIGATION[1].name, "Explore");
     assert.equal(SIDEBAR_NAVIGATION[1].href, "/explore");
+});
+
+test("sidebar navigation exposes both vibe destinations after Explore", () => {
+    assert.equal(SIDEBAR_NAVIGATION[2].name, "Vibe Explore");
+    assert.equal(SIDEBAR_NAVIGATION[2].href, "/vibe");
+    assert.equal(SIDEBAR_NAVIGATION[3].name, "Vibe Map");
+    assert.equal(SIDEBAR_NAVIGATION[3].href, "/vibe?tab=map");
 });
 
 test("sidebar navigation includes Library, Listen Together, Audiobooks, Podcasts", () => {
@@ -48,4 +55,10 @@ test("mobile quick links include Listen Together", () => {
         names.includes("Listen Together"),
         "should include Listen Together"
     );
+});
+
+test("mobile quick links include both vibe destinations", () => {
+    const hrefs = MOBILE_QUICK_LINKS.map((item) => item.href);
+    assert.ok(hrefs.includes("/vibe"), "should include Vibe Explore");
+    assert.ok(hrefs.includes("/vibe?tab=map"), "should include Vibe Map");
 });

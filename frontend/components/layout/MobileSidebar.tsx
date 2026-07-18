@@ -4,11 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+    AudioWaveform,
     Compass,
     Download,
     Heart,
     Home,
     LogOut,
+    Map,
     Radio,
     RefreshCw,
     Settings,
@@ -22,7 +24,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/lib/toast-context";
 import { EqBars } from "@/components/ui/EqBars";
 import Image from "next/image";
-import { MOBILE_QUICK_LINKS } from "./socialNavigation";
+import { MOBILE_QUICK_LINKS, getActiveNavHref } from "./socialNavigation";
 import { BRAND_NAME } from "@/lib/brand";
 import { frontendLogger as sharedFrontendLogger } from "@/lib/logger";
 
@@ -31,6 +33,18 @@ interface MobileSidebarProps {
     onClose: () => void;
     hasActiveSessions: boolean;
 }
+
+const QUICK_LINK_ICONS: Record<string, typeof Compass> = {
+    "/": Home,
+    "/explore": Compass,
+    "/vibe": AudioWaveform,
+    "/vibe?tab=map": Map,
+    "/discover": Compass,
+    "/import": Download,
+    "/playlist/my-liked": Heart,
+    "/radio": Radio,
+    "/listen-together": Users,
+};
 
 /**
  * Renders the MobileSidebar component.
@@ -77,16 +91,6 @@ export function MobileSidebar({ isOpen, onClose, hasActiveSessions }: MobileSide
     };
 
     if (!isOpen) return null;
-
-    const quickLinkIcons: Record<string, typeof Compass> = {
-        "/": Home,
-        "/explore": Compass,
-        "/discover": Compass,
-        "/import": Download,
-        "/playlist/my-liked": Heart,
-        "/radio": Radio,
-        "/listen-together": Users,
-    };
 
     return (
         <>
@@ -144,18 +148,22 @@ export function MobileSidebar({ isOpen, onClose, hasActiveSessions }: MobileSide
                             Quick Links
                         </div>
                         {MOBILE_QUICK_LINKS.map((link) => {
-                            const Icon = quickLinkIcons[link.href] ?? Compass;
+                            const Icon = QUICK_LINK_ICONS[link.href] ?? Compass;
+                            // location.search is safe here: the drawer only
+                            // renders client-side and closes on navigation.
+                            const currentSearch = typeof window === "undefined" ? "" : window.location.search;
+                            const isActive = link.href === getActiveNavHref(pathname, currentSearch, MOBILE_QUICK_LINKS);
                             return (
                                 <Link
                                     key={link.href}
                                     href={link.href}
                                     aria-current={
-                                        pathname === link.href ? "page" : undefined
+                                        isActive ? "page" : undefined
                                     }
                                     aria-label={link.name}
                                     className={cn(
                                         "flex items-center gap-3 px-3 py-3 rounded-lg transition-colors",
-                                        pathname === link.href ?
+                                        isActive ?
                                             "bg-white/10 text-white"
                                         :   "text-gray-400 hover:text-white hover:bg-white/5",
                                     )}

@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 const state = {
     pathname: "/library",
+    search: "",
     isAuthenticated: true,
     hasActiveSessions: false,
     isMobile: false,
@@ -14,6 +15,7 @@ const state = {
 mock.module("next/navigation", {
     namedExports: {
         usePathname: () => state.pathname,
+        useSearchParams: () => new URLSearchParams(state.search),
     },
 });
 
@@ -121,10 +123,21 @@ mock.module("../../components/layout/MobileSidebar.tsx", {
 
 beforeEach(() => {
     state.pathname = "/library";
+    state.search = "";
     state.isAuthenticated = true;
     state.hasActiveSessions = false;
     state.isMobile = false;
     state.isTablet = false;
+});
+
+test("renders the mobile drawer instead of the desktop aside on mobile", async () => {
+    state.isMobile = true;
+
+    const { Sidebar } = await import("../../components/layout/Sidebar");
+    const html = renderToStaticMarkup(React.createElement(Sidebar));
+
+    assert.match(html, /mobile-sidebar/);
+    assert.doesNotMatch(html, /<aside/);
 });
 
 test("returns null for auth routes", async () => {
@@ -148,6 +161,62 @@ test("renders social navigation without my history link", async () => {
     assert.doesNotMatch(html, /My History/);
 });
 
+test("renders vibe explore and vibe map navigation entries", async () => {
+    const { Sidebar } = await import("../../components/layout/Sidebar");
+    const html = renderToStaticMarkup(React.createElement(Sidebar));
+
+    assert.match(html, />Vibe Explore</);
+    assert.match(html, />Vibe Map</);
+    assert.ok(html.includes('href="/vibe"'), "expected a /vibe link");
+    assert.ok(
+        html.includes('href="/vibe?tab=map"'),
+        "expected a /vibe?tab=map link"
+    );
+});
+
+test("marks vibe explore active on /vibe without a tab param", async () => {
+    state.pathname = "/vibe";
+
+    const { Sidebar } = await import("../../components/layout/Sidebar");
+    const html = renderToStaticMarkup(React.createElement(Sidebar));
+
+    const exploreLink = html.match(/<a[^>]*href="\/vibe"[^>]*>/);
+    const mapLink = html.match(/<a[^>]*href="\/vibe\?tab=map"[^>]*>/);
+    assert.ok(exploreLink && mapLink, "expected both vibe links");
+    assert.match(exploreLink[0], /aria-current="page"/);
+    assert.doesNotMatch(mapLink[0], /aria-current/);
+});
+
+test("renders a badge chip when a nav item declares one", async () => {
+    const { SidebarNavLinks } = await import("../../components/layout/Sidebar");
+    const html = renderToStaticMarkup(
+        React.createElement(SidebarNavLinks, {
+            pathname: "/",
+            search: "",
+            isMobileOrTablet: false,
+            hasActiveSessions: false,
+            items: [{ name: "Radio", href: "/radio", badge: "BETA" }],
+        })
+    );
+
+    assert.match(html, />Radio</);
+    assert.match(html, />BETA</);
+});
+
+test("marks vibe map active when the tab param is map", async () => {
+    state.pathname = "/vibe";
+    state.search = "tab=map";
+
+    const { Sidebar } = await import("../../components/layout/Sidebar");
+    const html = renderToStaticMarkup(React.createElement(Sidebar));
+
+    const exploreLink = html.match(/<a[^>]*href="\/vibe"[^>]*>/);
+    const mapLink = html.match(/<a[^>]*href="\/vibe\?tab=map"[^>]*>/);
+    assert.ok(exploreLink && mapLink, "expected both vibe links");
+    assert.match(mapLink[0], /aria-current="page"/);
+    assert.doesNotMatch(exploreLink[0], /aria-current/);
+});
+
 test("shows listen-together equalizer marker when active sessions exist", async () => {
     state.hasActiveSessions = true;
     state.pathname = "/listen-together";
@@ -164,6 +233,8 @@ test("keeps prefetch enabled for primary sidebar navigation links", async () => 
 
     const navHrefs = [
         "/explore",
+        "/vibe",
+        "/vibe?tab=map",
         "/library",
         "/listen-together",
         "/audiobooks",

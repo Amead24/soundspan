@@ -44,8 +44,10 @@ mock.module("lucide-react", {
         Settings: Icon,
         RefreshCw: Icon,
         LogOut: Icon,
+        AudioWaveform: Icon,
         Compass: Icon,
         Heart: Icon,
+        Map: Icon,
         X: Icon,
         Radio: Icon,
         Users: Icon,
@@ -150,6 +152,50 @@ test("shows listen-together marker when sessions are active", async () => {
     );
 
     assert.match(html, /eq-bars/);
+});
+
+test("renders both vibe quick links", async () => {
+    const { MobileSidebar } = await import(
+        "../../components/layout/MobileSidebar"
+    );
+
+    const html = renderToStaticMarkup(
+        React.createElement(MobileSidebar, {
+            isOpen: true,
+            onClose: () => undefined,
+            hasActiveSessions: state.hasActiveSessions,
+        })
+    );
+
+    assert.match(html, />Vibe Explore</);
+    assert.match(html, />Vibe Map</);
+    assert.ok(html.includes('href="/vibe"'), "expected a /vibe link");
+    assert.ok(
+        html.includes('href="/vibe?tab=map"'),
+        "expected a /vibe?tab=map link"
+    );
+});
+
+test("marks vibe explore current on /vibe and leaves vibe map inactive", async () => {
+    state.pathname = "/vibe";
+
+    const { MobileSidebar } = await import(
+        "../../components/layout/MobileSidebar"
+    );
+
+    const html = renderToStaticMarkup(
+        React.createElement(MobileSidebar, {
+            isOpen: true,
+            onClose: () => undefined,
+            hasActiveSessions: state.hasActiveSessions,
+        })
+    );
+
+    const exploreLink = html.match(/<a[^>]*href="\/vibe"[^>]*>/);
+    const mapLink = html.match(/<a[^>]*href="\/vibe\?tab=map"[^>]*>/);
+    assert.ok(exploreLink && mapLink, "expected both vibe links");
+    assert.match(exploreLink[0], /aria-current="page"/);
+    assert.doesNotMatch(mapLink[0], /aria-current/);
 });
 
 test("marks settings as the current route when viewing settings", async () => {

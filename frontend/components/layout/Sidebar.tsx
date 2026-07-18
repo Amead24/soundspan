@@ -1,21 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState, useEffect, useRef } from "react";
-import { Plus, RefreshCw, ArrowUpDown, Heart } from "lucide-react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense, useState, useEffect, useRef } from "react";
+import { Plus, ArrowUpDown, Heart } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { useAudioState } from "@/lib/audio-state-context";
 import { useActiveListenSessions } from "@/hooks/useActiveListenSessions";
 import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
-import { useToast } from "@/lib/toast-context";
 import { EqBars } from "@/components/ui/EqBars";
-import Image from "next/image";
 import { MobileSidebar } from "./MobileSidebar";
-import { SIDEBAR_NAVIGATION } from "./socialNavigation";
-import { BRAND_NAME } from "@/lib/brand";
+import { SIDEBAR_NAVIGATION, getActiveNavHref } from "./socialNavigation";
 import { useLikedPlaylistQuery } from "@/hooks/useQueries";
 import { frontendLogger as sharedFrontendLogger } from "@/lib/logger";
 
@@ -33,15 +29,104 @@ interface Playlist {
 type PlaylistSort = "created" | "updated" | "alphabetical";
 type PlaylistFilter = "all" | "mine" | "others";
 
+interface SidebarNavLinksProps {
+    pathname: string;
+    search: string;
+    isMobileOrTablet: boolean;
+    hasActiveSessions: boolean;
+    items?: typeof SIDEBAR_NAVIGATION;
+}
+
+export function SidebarNavLinks({
+    pathname,
+    search,
+    isMobileOrTablet,
+    hasActiveSessions,
+    items = SIDEBAR_NAVIGATION,
+}: SidebarNavLinksProps) {
+    const activeHref = getActiveNavHref(pathname, search, items);
+
+    return (
+        <>
+            {items.map((item) => {
+                const isActive = item.href === activeHref;
+                const badge = "badge" in item ? item.badge : null;
+                const isListenTogether = item.href === "/listen-together";
+
+                return (
+                    <Link
+                        key={item.name}
+                        href={item.href}
+                        aria-current={isActive ? "page" : undefined}
+                        className={cn(
+                            "block rounded-lg transition-all duration-200 group relative overflow-hidden",
+                            isMobileOrTablet ? "px-4 py-3.5" : "px-4 py-3",
+                            isActive ?
+                                "bg-white/10 text-white"
+                            :   "text-gray-400 hover:text-white hover:bg-white/5 active:bg-white/[0.07]",
+                        )}
+                    >
+                        <div className="relative z-10 flex items-center gap-2">
+                            <span
+                                className={cn(
+                                    "font-semibold transition-all duration-200",
+                                    isMobileOrTablet ? "text-base" : (
+                                        "text-sm"
+                                    ),
+                                    isActive && "text-white",
+                                )}
+                            >
+                                {item.name}
+                            </span>
+                            {badge && (
+                                <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded bg-[#3b82f6]/20 text-[#3b82f6] border border-[#3b82f6]/30">
+                                    {badge}
+                                </span>
+                            )}
+                            {isListenTogether && hasActiveSessions && (
+                                <EqBars />
+                            )}
+                        </div>
+                    </Link>
+                );
+            })}
+        </>
+    );
+}
+
+// useSearchParams needs a Suspense boundary during prerender; the fallback
+// renders the same links without query-aware highlighting.
+function SidebarNavLinksWithSearch(props: Omit<SidebarNavLinksProps, "search">) {
+    const searchParams = useSearchParams();
+    return <SidebarNavLinks search={searchParams.toString()} {...props} />;
+}
+
+// The nav lives here (not in sidebarContent) so the whole navigation block
+// has its own top-level function: lines inside Sidebar's large render body
+// land in the #111 coverage-mapping smear. Rendered only in the desktop
+// <aside> — mobile gets the separate MobileSidebar drawer.
+function SidebarNav(props: Omit<SidebarNavLinksProps, "search">) {
+    return (
+        <nav
+            className={cn(
+                props.isMobileOrTablet ? "pt-4 space-y-1 px-6" : "pt-6 space-y-1 px-3",
+            )}
+            role="navigation"
+            aria-label="Main navigation"
+        >
+            <Suspense fallback={<SidebarNavLinks search="" {...props} />}>
+                <SidebarNavLinksWithSearch {...props} />
+            </Suspense>
+        </nav>
+    );
+}
+
 /**
  * Renders the Sidebar component.
  */
 export function Sidebar() {
     const pathname = usePathname();
     const { isAuthenticated } = useAuth();
-    const { toast } = useToast();
-    const { currentTrack, currentAudiobook, currentPodcast, playbackType } =
-        useAudioState();
     const hasActiveSessions = useActiveListenSessions();
     const likedQuery = useLikedPlaylistQuery(1);
     const likedTotal = likedQuery.data?.total ?? 0;
@@ -51,7 +136,6 @@ export function Sidebar() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [playlists, setPlaylists] = useState<Playlist[]>([]);
     const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(false);
-    const [isSyncing, setIsSyncing] = useState(false);
     const [playlistSort, setPlaylistSort] = useState<PlaylistSort>("updated");
     const [playlistFilter, setPlaylistFilter] = useState<PlaylistFilter>("all");
     const [isSortFilterOpen, setIsSortFilterOpen] = useState(false);
@@ -59,24 +143,6 @@ export function Sidebar() {
     const sortFilterRef = useRef<HTMLDivElement>(null);
     const sortFilterBtnRef = useRef<HTMLButtonElement>(null);
     const hasLoadedPlaylists = useRef(false);
-
-    // Handle library sync - no toast, notification bar handles feedback
-    const handleSync = async () => {
-        if (isSyncing) return;
-
-        try {
-            setIsSyncing(true);
-            await api.scanLibrary();
-            // No toast - notification will appear in the activity panel
-            window.dispatchEvent(new CustomEvent("notifications-changed"));
-        } catch (error) {
-            sharedFrontendLogger.error("Failed to trigger library scan:", error);
-            toast.error("Failed to start scan. Please try again.");
-        } finally {
-            // Keep syncing for a bit to show the animation
-            setTimeout(() => setIsSyncing(false), 2000);
-        }
-    };
 
     // Load playlists only once
     useEffect(() => {
@@ -199,138 +265,6 @@ export function Sidebar() {
     // Render sidebar content inline to prevent component recreation
     const sidebarContent = (
         <>
-            {/* Mobile Only - Logo and App Info */}
-            {isMobileOrTablet && (
-                <div className="px-6 pt-8 pb-6 border-b border-white/[0.08]">
-                    {/* Logo and Title */}
-                    <div className="flex items-center gap-4 mb-5">
-                        <Image
-                            src="/assets/images/soundspan.webp"
-                            alt={BRAND_NAME}
-                            width={48}
-                            height={48}
-                            sizes="48px"
-                            className="flex-shrink-0"
-                        />
-                        <div className="flex-1 min-w-0">
-                            <h2 className="brand-wordmark text-2xl font-black text-white tracking-tight">
-                                {BRAND_NAME}
-                            </h2>
-                            {(
-                                !currentTrack &&
-                                !currentAudiobook &&
-                                !currentPodcast
-                            ) ?
-                                <p className="text-sm text-gray-400 font-medium">
-                                    Stream Your Way
-                                </p>
-                            :   <div className="text-xs text-gray-400 truncate">
-                                    <span className="text-gray-500">
-                                        Listening to:{" "}
-                                    </span>
-                                    <span className="text-white font-medium">
-                                        {(
-                                            playbackType === "track" &&
-                                            currentTrack
-                                        ) ?
-                                            `${currentTrack.artist?.name} - ${currentTrack.album?.title}`
-                                        : (
-                                            playbackType === "audiobook" &&
-                                            currentAudiobook
-                                        ) ?
-                                            currentAudiobook.title
-                                        : (
-                                            playbackType === "podcast" &&
-                                            currentPodcast
-                                        ) ?
-                                            currentPodcast.podcastTitle
-                                        :   ""}
-                                    </span>
-                                </div>
-                            }
-                        </div>
-                    </div>
-
-                    {/* Quick Actions - Sync */}
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={handleSync}
-                            disabled={isSyncing}
-                            className={cn(
-                                "w-10 h-10 flex items-center justify-center rounded-full transition-all duration-300",
-                                isSyncing ?
-                                    "bg-[#1DB954] text-black"
-                                :   "bg-white/10 text-white hover:bg-white/15 active:scale-95",
-                            )}
-                            aria-label={
-                                isSyncing ? "Syncing library" : "Sync library"
-                            }
-                            title={isSyncing ? "Syncing..." : "Sync Library"}
-                        >
-                            <RefreshCw
-                                className={cn(
-                                    "w-4 h-4 transition-transform",
-                                    isSyncing && "animate-spin",
-                                )}
-                            />
-                        </button>
-
-                    </div>
-                </div>
-            )}
-
-            {/* Navigation */}
-            <nav
-                className={cn(
-                    isMobileOrTablet ? "pt-4 space-y-1 px-6" : "pt-6 space-y-1 px-3",
-                )}
-                role="navigation"
-                aria-label="Main navigation"
-            >
-                {SIDEBAR_NAVIGATION.map((item) => {
-                    const isActive = pathname === item.href;
-                    const badge = "badge" in item ? item.badge : null;
-                    const isListenTogether = item.href === "/listen-together";
-
-                    return (
-                        <Link
-                            key={item.name}
-                            href={item.href}
-                            aria-current={isActive ? "page" : undefined}
-                            className={cn(
-                                "block rounded-lg transition-all duration-200 group relative overflow-hidden",
-                                isMobileOrTablet ? "px-4 py-3.5" : "px-4 py-3",
-                                isActive ?
-                                    "bg-white/10 text-white"
-                                :   "text-gray-400 hover:text-white hover:bg-white/5 active:bg-white/[0.07]",
-                            )}
-                        >
-                            <div className="relative z-10 flex items-center gap-2">
-                                <span
-                                    className={cn(
-                                        "font-semibold transition-all duration-200",
-                                        isMobileOrTablet ? "text-base" : (
-                                            "text-sm"
-                                        ),
-                                        isActive && "text-white",
-                                    )}
-                                >
-                                    {item.name}
-                                </span>
-                                {badge && (
-                                    <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded bg-[#3b82f6]/20 text-[#3b82f6] border border-[#3b82f6]/30">
-                                        {badge}
-                                    </span>
-                                )}
-                                {isListenTogether && hasActiveSessions && (
-                                    <EqBars />
-                                )}
-                            </div>
-                        </Link>
-                    );
-                })}
-            </nav>
-
             {/* Playlists Section */}
             <div className={cn("flex-1 overflow-hidden flex flex-col", isMobileOrTablet ? "mt-8" : "mt-4")}>
                 <div
@@ -603,6 +537,7 @@ export function Sidebar() {
             {/* Desktop Sidebar */}
             {!isMobileOrTablet && (
                 <aside className="w-64 bg-[#0f0f0f] rounded-lg flex flex-col overflow-hidden relative z-10 border border-white/[0.03]">
+                    <SidebarNav pathname={pathname} isMobileOrTablet={isMobileOrTablet} hasActiveSessions={hasActiveSessions} />
                     {sidebarContent}
                 </aside>
             )}
