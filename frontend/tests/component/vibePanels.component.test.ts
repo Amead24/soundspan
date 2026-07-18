@@ -137,6 +137,7 @@ test("TravelPanel renders compass, breadcrumb and on/off-map neighbours", async 
         setDirection: noop,
         navigate: noop,
         queue: noop,
+        playNext: noop,
         close: noop,
     };
     const html = renderToStaticMarkup(
@@ -171,6 +172,7 @@ test("TravelPanel shows the loading state", async () => {
         setDirection: noop,
         navigate: noop,
         queue: noop,
+        playNext: noop,
         close: noop,
     };
     const html = renderToStaticMarkup(
@@ -195,6 +197,7 @@ test("TravelPanel surfaces an error", async () => {
         setDirection: noop,
         navigate: noop,
         queue: noop,
+        playNext: noop,
         close: noop,
     };
     const html = renderToStaticMarkup(
@@ -1035,6 +1038,7 @@ test("TravelPanel renders the library-calibrated percent + label when quantiles 
         setDirection: noop,
         navigate: noop,
         queue: noop,
+        playNext: noop,
         close: noop,
     };
     const html = renderToStaticMarkup(
@@ -1122,6 +1126,7 @@ test("NeighborRow expansion renders the calibrated sentence and per-feature matc
             offMap: false,
             onNavigate: noop,
             onQueue: noop,
+            onPlayNext: noop,
             quantiles: null,
             originFeatures,
             expanded: true,
@@ -1159,6 +1164,7 @@ test("NeighborRow collapsed (expanded=false) does not render the breakdown", asy
             offMap: false,
             onNavigate: noop,
             onQueue: noop,
+            onPlayNext: noop,
             quantiles: null,
             originFeatures: null,
             expanded: false,

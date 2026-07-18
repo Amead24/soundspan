@@ -7,7 +7,8 @@
  * lives in `useVibeMode`; this only calls back.
  *
  * Clicking a neighbour navigates (play + becomes current); shift-click queues
- * it without moving. Loading + error states render inline.
+ * it without moving; ctrl+shift-click queues it as the next song. Loading +
+ * error states render inline.
  *
  * Each neighbour row also has a chevron/info toggle expanding an inline
  * "why this match" breakdown: the calibrated match sentence plus per-feature
@@ -114,6 +115,7 @@ export function NeighborRow({
     offMap,
     onNavigate,
     onQueue,
+    onPlayNext,
     quantiles,
     originFeatures,
     expanded,
@@ -123,6 +125,7 @@ export function NeighborRow({
     offMap: boolean;
     onNavigate: (id: string) => void;
     onQueue: (id: string) => void;
+    onPlayNext: (id: string) => void;
     quantiles: readonly number[] | null;
     originFeatures: VibeFeatures | null;
     expanded: boolean;
@@ -138,11 +141,17 @@ export function NeighborRow({
                     distance={n.distance}
                     quantiles={quantiles}
                     accentClass="text-indigo-300/80"
-                    onClick={(e) => (e.shiftKey ? onQueue(n.id) : onNavigate(n.id))}
+                    onClick={(e) =>
+                        (e.ctrlKey || e.metaKey) && e.shiftKey
+                            ? onPlayNext(n.id)
+                            : e.shiftKey
+                              ? onQueue(n.id)
+                              : onNavigate(n.id)
+                    }
                     hint={
                         offMap
-                            ? "Not on the map — click to play, shift-click to queue"
-                            : "Click to travel here, shift-click to queue"
+                            ? "Not on the map — click to play, shift-click to queue, ctrl+shift to play next"
+                            : "Click to travel here, shift-click to queue, ctrl+shift to play next"
                     }
                     className="flex-1"
                 />
@@ -190,6 +199,7 @@ export function TravelPanel({ view }: { view: TravelView }) {
         setDirection,
         navigate,
         queue,
+        playNext,
         close,
     } = view;
 
@@ -282,6 +292,7 @@ export function TravelPanel({ view }: { view: TravelView }) {
                         offMap={false}
                         onNavigate={navigate}
                         onQueue={queue}
+                        onPlayNext={playNext}
                         quantiles={quantiles}
                         originFeatures={originFeatures}
                         expanded={expandedId === n.id}
@@ -295,6 +306,7 @@ export function TravelPanel({ view }: { view: TravelView }) {
                         offMap
                         onNavigate={navigate}
                         onQueue={queue}
+                        onPlayNext={playNext}
                         quantiles={quantiles}
                         originFeatures={originFeatures}
                         expanded={expandedId === n.id}

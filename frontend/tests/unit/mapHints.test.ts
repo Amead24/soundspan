@@ -11,6 +11,11 @@ test("each mode gets its own verb hint", () => {
     assert.match(hintForMode("alchemy"), /blend 2–10 tracks/);
 });
 
+test("explore and travel hints teach the ctrl+shift play-next verb", () => {
+    assert.match(hintForMode("explore"), /Ctrl\+Shift plays next/);
+    assert.match(hintForMode("travel"), /Ctrl\+Shift plays next/);
+});
+
 test("journey picking narrows the hint to the pick action", () => {
     assert.match(
         hintForMode("journey", { picking: true }),

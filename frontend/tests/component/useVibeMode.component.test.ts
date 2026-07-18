@@ -60,19 +60,22 @@ const controlsCalls: {
     playTrack: string[];
     playTracks: string[][];
     addToQueue: string[];
-} = { playTrack: [], playTracks: [], addToQueue: [] };
+    playNext: string[];
+} = { playTrack: [], playTracks: [], addToQueue: [], playNext: [] };
 
 const controls = {
     playTrack: (t: { id: string }) => controlsCalls.playTrack.push(t.id),
     playTracks: (tracks: { id: string }[]) =>
         controlsCalls.playTracks.push(tracks.map((t) => t.id)),
     addToQueue: (t: { id: string }) => controlsCalls.addToQueue.push(t.id),
+    playNext: (t: { id: string }) => controlsCalls.playNext.push(t.id),
 };
 
 beforeEach(() => {
     controlsCalls.playTrack.length = 0;
     controlsCalls.playTracks.length = 0;
     controlsCalls.addToQueue.length = 0;
+    controlsCalls.playNext.length = 0;
     apiCalls.getVibeSimilarTracks.length = 0;
     apiCalls.getVibeMoods = 0;
 });
@@ -268,7 +271,7 @@ test("journey mode (picking): the destination intercept wins over shift — clic
     await h.unmount();
 });
 
-test("ctrl+shift on a dot: ctrl/alchemy-add still wins over shift (ordering constraint #2 preserved)", async () => {
+test("ctrl+shift-click on a dot queues it as the NEXT song — never blends, never changes playback or mode", async () => {
     const h = await mountVibe();
     assert.equal(h.latest().mode, "explore");
 
@@ -276,12 +279,50 @@ test("ctrl+shift on a dot: ctrl/alchemy-add still wins over shift (ordering cons
         h.latest().onDotClick("t2", { ctrlOrMeta: true, shift: true });
     });
 
-    assert.equal(h.latest().mode, "alchemy");
-    assert.deepEqual(
-        h.latest().alchemy?.ingredients.map((i) => i.id),
-        ["t2"]
-    );
+    assert.deepEqual(controlsCalls.playNext, ["t2"]);
     assert.deepEqual(controlsCalls.addToQueue, []);
+    assert.deepEqual(controlsCalls.playTrack, []);
+    assert.equal(h.latest().mode, "explore");
+    assert.ok(!h.latest().alchemy, "must not enter alchemy");
+
+    await h.unmount();
+});
+
+test("travel mode: ctrl+shift-click queues a dot as next without navigating away from the current node", async () => {
+    const h = await mountVibe();
+
+    await h.act(() => {
+        h.latest().onDotClick("t2", { ctrlOrMeta: false, shift: false });
+    });
+    assert.equal(h.latest().mode, "travel");
+    assert.equal(h.latest().travel?.currentId, "t2");
+
+    await h.act(() => {
+        h.latest().onDotClick("t3", { ctrlOrMeta: true, shift: true });
+    });
+    assert.deepEqual(controlsCalls.playNext, ["t3"]);
+    assert.deepEqual(controlsCalls.playTrack, ["t2"]); // unchanged
+    assert.equal(h.latest().travel?.currentId, "t2"); // still t2
+
+    await h.unmount();
+});
+
+test("journey mode (picking): the destination intercept wins over ctrl+shift too", async () => {
+    const h = await mountVibe();
+
+    await h.act(() => {
+        h.latest().startJourney();
+    });
+    await h.act(() => {
+        h.latest().journey?.togglePick();
+    });
+    assert.equal(h.latest().journey?.picking, true);
+
+    await h.act(() => {
+        h.latest().onDotClick("t3", { ctrlOrMeta: true, shift: true });
+    });
+    assert.equal(h.latest().journey?.destTrackId, "t3");
+    assert.deepEqual(controlsCalls.playNext, []);
 
     await h.unmount();
 });

@@ -340,6 +340,7 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
         playTrack,
         playTracks,
         addToQueue,
+        playNext,
         moveQueueItem,
         removeFromQueue,
         playQueueIndex,
@@ -783,8 +784,8 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
     }, [tracks]);
 
     const controls = useMemo(
-        () => ({ playTrack, playTracks, addToQueue }),
-        [playTrack, playTracks, addToQueue]
+        () => ({ playTrack, playTracks, addToQueue, playNext }),
+        [playTrack, playTracks, addToQueue, playNext]
     );
     const vibe = useVibeMode({ trackById, currentTrack, controls, quantiles });
 
@@ -1522,6 +1523,8 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
                                                   onNavigate:
                                                       vibe.travel.navigate,
                                                   onQueue: vibe.travel.queue,
+                                                  onPlayNext:
+                                                      vibe.travel.playNext,
                                               }
                                             : null
                                     }

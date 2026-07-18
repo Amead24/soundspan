@@ -219,6 +219,7 @@ export interface TravelView {
     setDirection: (d: CompassDirection) => void;
     navigate: (id: string) => void;
     queue: (id: string) => void;
+    playNext: (id: string) => void;
     close: () => void;
 }
 
@@ -319,6 +320,7 @@ export interface UseVibeModeArgs {
             isVibeQueue?: boolean
         ) => void;
         addToQueue: (track: Track, options?: { silent?: boolean }) => void;
+        playNext: (track: Track) => void;
     };
     /**
      * Library-calibrated distance quantiles (`api.getVibeCalibration`, fetched
@@ -598,6 +600,14 @@ export function useVibeMode({
         [shownNeighborById, controls]
     );
 
+    const playNextTravel = useCallback(
+        (id: string) => {
+            const candidate = shownNeighborById.get(id);
+            if (candidate) controls.playNext(waypointToTrack(candidate));
+        },
+        [shownNeighborById, controls]
+    );
+
     const onDotClick = useCallback(
         (id: string, mods: { ctrlOrMeta: boolean; shift: boolean }) => {
             const t = trackById.get(id);
@@ -610,6 +620,15 @@ export function useVibeMode({
                     dispatch({ type: "SET_DEST", id });
                     clearJourneyResults();
                 }
+                return;
+            }
+            // Ctrl+Shift-click queues the track as the NEXT song — same
+            // never-changes-playback, every-mode rule as plain shift-queue.
+            // Checked before the plain-ctrl branch so blend doesn't swallow
+            // it (shift alone appends to the queue's end; this is the "I
+            // want THAT one right after this song" gesture).
+            if (mods.ctrlOrMeta && mods.shift) {
+                controls.playNext(mapTrackToTrack(t));
                 return;
             }
             if (mods.ctrlOrMeta) {
@@ -834,6 +853,7 @@ export function useVibeMode({
                       dispatch({ type: "SET_DIRECTION", direction: d }),
                   navigate: navigateTravel,
                   queue: queueTravel,
+                  playNext: playNextTravel,
                   close: exitToExplore,
               }
             : null;

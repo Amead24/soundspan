@@ -46,6 +46,7 @@ export interface MapDecorationsProps {
         onMapNeighbors: readonly CompassCandidate[];
         onNavigate: (id: string) => void;
         onQueue: (id: string) => void;
+        onPlayNext: (id: string) => void;
     } | null;
     journey: {
         fromId: string;
@@ -143,7 +144,10 @@ export function MapDecorations({
                         onPointerDown={onHaloPointerDown}
                         onClick={(e) => {
                             if (e.ctrlKey || e.metaKey) {
-                                onHaloAddIngredient?.(n.id);
+                                // Ctrl+Shift = queue as next song, same
+                                // gesture as canvas dots (onDotClick).
+                                if (e.shiftKey) travel.onPlayNext(n.id);
+                                else onHaloAddIngredient?.(n.id);
                                 return;
                             }
                             if (e.shiftKey) travel.onQueue(n.id);
