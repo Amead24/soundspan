@@ -201,18 +201,69 @@ test("travel mode: shift-click on a neighbour queues it without navigating away 
     await h.unmount();
 });
 
-test("alchemy mode: shift-click on a dot queues it instead of adding it as an ingredient", async () => {
+test("alchemy is opt-in: openAlchemy opens an empty workspace; clicks then add ingredients", async () => {
     const h = await mountVibe();
+    assert.equal(h.latest().mode, "explore");
 
-    // Ctrl-click enters alchemy with t2 as the first ingredient.
+    await h.act(() => {
+        h.latest().openAlchemy();
+    });
+    assert.equal(h.latest().mode, "alchemy");
+    assert.deepEqual(h.latest().alchemy?.ingredients, []);
+
+    // With the workspace open, ctrl-click AND plain click add ingredients.
     await h.act(() => {
         h.latest().onDotClick("t2", { ctrlOrMeta: true, shift: false });
     });
-    assert.equal(h.latest().mode, "alchemy");
+    await h.act(() => {
+        h.latest().onDotClick("t3", { ctrlOrMeta: false, shift: false });
+    });
     assert.deepEqual(
         h.latest().alchemy?.ingredients.map((i) => i.id),
-        ["t2"]
+        ["t2", "t3"]
     );
+    assert.deepEqual(controlsCalls.playNext, []);
+    assert.deepEqual(controlsCalls.playTrack, []);
+
+    await h.unmount();
+});
+
+test("ctrl-click with alchemy closed queues as NEXT — never silently enters alchemy", async () => {
+    const h = await mountVibe();
+    assert.equal(h.latest().mode, "explore");
+
+    await h.act(() => {
+        h.latest().onDotClick("t2", { ctrlOrMeta: true, shift: false });
+    });
+
+    assert.deepEqual(controlsCalls.playNext, ["t2"]);
+    assert.equal(h.latest().mode, "explore");
+    assert.ok(!h.latest().alchemy, "must not enter alchemy");
+
+    // Same from travel mode: the constellation survives.
+    await h.act(() => {
+        h.latest().onDotClick("t3", { ctrlOrMeta: false, shift: false });
+    });
+    assert.equal(h.latest().mode, "travel");
+    await h.act(() => {
+        h.latest().onDotClick("t4", { ctrlOrMeta: true, shift: false });
+    });
+    assert.deepEqual(controlsCalls.playNext, ["t2", "t4"]);
+    assert.equal(h.latest().mode, "travel");
+    assert.equal(h.latest().travel?.currentId, "t3");
+
+    await h.unmount();
+});
+
+test("alchemy workspace: shift-click still queues; removing the last ingredient keeps it open", async () => {
+    const h = await mountVibe();
+
+    await h.act(() => {
+        h.latest().openAlchemy();
+    });
+    await h.act(() => {
+        h.latest().onDotClick("t2", { ctrlOrMeta: true, shift: false });
+    });
 
     // Shift-click a different dot: queues it, ingredient list untouched.
     await h.act(() => {
@@ -224,6 +275,36 @@ test("alchemy mode: shift-click on a dot queues it instead of adding it as an in
         ["t2"]
     );
     assert.deepEqual(controlsCalls.playTrack, []);
+
+    // Removing the last ingredient keeps the deliberately-opened workspace.
+    await h.act(() => {
+        h.latest().alchemy?.remove("t2");
+    });
+    assert.equal(h.latest().mode, "alchemy");
+    assert.deepEqual(h.latest().alchemy?.ingredients, []);
+
+    await h.unmount();
+});
+
+test("openAlchemy is a no-op during journey (a half-built route is never destroyed)", async () => {
+    const h = await mountVibe();
+
+    await h.act(() => {
+        h.latest().startJourney();
+    });
+    assert.equal(h.latest().mode, "journey");
+
+    await h.act(() => {
+        h.latest().openAlchemy();
+    });
+    assert.equal(h.latest().mode, "journey");
+
+    // Bare ctrl-click during journey is queue-family too, not a mode change.
+    await h.act(() => {
+        h.latest().onDotClick("t3", { ctrlOrMeta: true, shift: false });
+    });
+    assert.deepEqual(controlsCalls.playNext, ["t3"]);
+    assert.equal(h.latest().mode, "journey");
 
     await h.unmount();
 });

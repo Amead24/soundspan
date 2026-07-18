@@ -87,6 +87,7 @@ type Action =
     | { type: "SET_DEST"; id: string }
     | { type: "SET_MOOD_TARGET"; mood: string | null }
     | { type: "SET_STEPS"; steps: number }
+    | { type: "ENTER_ALCHEMY" }
     | { type: "ADD_ALCHEMY"; id: string }
     | { type: "REMOVE_ALCHEMY"; id: string }
     | { type: "SET_WEIGHT"; id: string; weight: number };
@@ -151,6 +152,13 @@ function reducer(state: ModeState, action: Action): ModeState {
             if (state.mode !== "journey") return state;
             return { ...state, steps: clampSteps(action.steps) };
 
+        case "ENTER_ALCHEMY":
+            // Opening an already-open workspace keeps its ingredients; from
+            // any other mode the tray starts empty (alchemy is opt-in via the
+            // flask button — dots only become ingredients once it's open).
+            if (state.mode === "alchemy") return state;
+            return { mode: "alchemy", ingredients: [] };
+
         case "ADD_ALCHEMY": {
             const prev = state.mode === "alchemy" ? state.ingredients : [];
             if (prev.some((i) => i.id === action.id)) return state;
@@ -166,7 +174,8 @@ function reducer(state: ModeState, action: Action): ModeState {
         case "REMOVE_ALCHEMY": {
             if (state.mode !== "alchemy") return state;
             const next = state.ingredients.filter((i) => i.id !== action.id);
-            if (next.length === 0) return { mode: "explore" };
+            // An emptied tray stays open: the workspace was opened
+            // deliberately (flask button), so only Esc/✕ closes it.
             return { mode: "alchemy", ingredients: next };
         }
         case "SET_WEIGHT":
@@ -344,8 +353,11 @@ export interface UseVibeMode {
     startJourney: () => void;
     /** Alchemy result ids to glow on the canvas (else null → spotlight owns it). */
     highlightIds: ReadonlySet<string> | null;
-    /** Add a track to the alchemy tray (ctrl/⌘-click anywhere, incl. halos). */
+    /** Add a track to the alchemy tray (clicks while the workspace is open). */
     addIngredient: (id: string) => void;
+    /** Explicitly open the alchemy workspace (flask button) with an empty
+     *  tray — the only way in; no-op during journey. */
+    openAlchemy: () => void;
     travel: TravelView | null;
     journey: JourneyView | null;
     alchemy: AlchemyView | null;
@@ -571,6 +583,16 @@ export function useVibeMode({
         [clearAlchemyResults]
     );
 
+    // Explicit alchemy entry (the flask button). Guarded during journey: a
+    // half-built route the user is actively constructing must never be
+    // silently destroyed — the button is disabled there too, this is the
+    // belt-and-braces for programmatic callers.
+    const openAlchemy = useCallback(() => {
+        if (inJourney) return;
+        dispatch({ type: "ENTER_ALCHEMY" });
+        clearAlchemyResults();
+    }, [inJourney, clearAlchemyResults]);
+
     // Lookup by id over the full (on-map + off-map) shown neighbours, so
     // navigate/queue can build a playable Track from the candidate payload
     // itself even when the neighbour isn't plotted on this map sample.
@@ -622,25 +644,19 @@ export function useVibeMode({
                 }
                 return;
             }
-            // Ctrl+Shift-click queues the track as the NEXT song — same
-            // never-changes-playback, every-mode rule as plain shift-queue.
-            // Checked before the plain-ctrl branch so blend doesn't swallow
-            // it (shift alone appends to the queue's end; this is the "I
-            // want THAT one right after this song" gesture).
-            if (mods.ctrlOrMeta && mods.shift) {
-                controls.playNext(mapTrackToTrack(t));
-                return;
-            }
+            // Ctrl-click (with or without shift) queues the track as the
+            // NEXT song — the "I want THAT one right after this song"
+            // gesture. Same never-changes-playback, every-mode rule as
+            // plain shift-queue. The single exception: with the alchemy
+            // workspace deliberately open (flask button), bare ctrl-click
+            // adds an ingredient instead — alchemy is opt-in, so a modifier
+            // click can never silently switch modes anymore.
             if (mods.ctrlOrMeta) {
-                // Journey is a half-built route the user is actively
-                // constructing — silently switching it into alchemy would
-                // destroy it. Explore/travel ctrl-click still enters alchemy
-                // unchanged (a travel constellation is cheap to rebuild).
-                if (state.mode === "journey") {
-                    toast("Close the journey (Esc) to start blending");
+                if (!mods.shift && state.mode === "alchemy") {
+                    addIngredient(id);
                     return;
                 }
-                addIngredient(id);
+                controls.playNext(mapTrackToTrack(t));
                 return;
             }
             // Plain shift-click on a dot always queues the track — never
@@ -938,6 +954,7 @@ export function useVibeMode({
         highlightIds:
             state.mode === "alchemy" && resultIds.size > 0 ? resultIds : null,
         addIngredient,
+        openAlchemy,
         travel,
         journey,
         alchemy,

@@ -39,6 +39,7 @@
 import {
     Brush,
     Crosshair,
+    FlaskConical,
     Footprints,
     HelpCircle,
     ListMusic,
@@ -88,6 +89,13 @@ export interface ViewControlsProps {
     canStartJourney: boolean;
     journeyHint: string;
     onStartJourney: () => void;
+    /** Alchemy workspace open state + explicit toggle — the ONLY way in
+     *  (dot clicks never enter alchemy on their own). Disabled during
+     *  journey, mirroring the journey button's alchemy guard. */
+    alchemyOpen: boolean;
+    canOpenAlchemy: boolean;
+    alchemyHint: string;
+    onToggleAlchemy: () => void;
     /** Queue panel open state + toggle, and a count of upcoming queue items
      *  (badge, capped display at "99+"; hidden entirely at 0). */
     queueOpen: boolean;
@@ -278,6 +286,10 @@ export function ViewControls({
     canStartJourney,
     journeyHint,
     onStartJourney,
+    alchemyOpen,
+    canOpenAlchemy,
+    alchemyHint,
+    onToggleAlchemy,
     queueOpen,
     onToggleQueue,
     queueCount,
@@ -392,6 +404,17 @@ export function ViewControls({
                 aria-label="Start a journey"
             >
                 <Route className="w-5 h-5" />
+            </button>
+            <button
+                type="button"
+                onClick={onToggleAlchemy}
+                disabled={!canOpenAlchemy}
+                aria-pressed={alchemyOpen}
+                className={`${BTN} ${alchemyOpen ? "bg-white/10 text-white" : ""}`}
+                title={alchemyHint}
+                aria-label="Blend tracks (alchemy)"
+            >
+                <FlaskConical className="w-5 h-5" />
             </button>
             <div className="relative">
                 <button

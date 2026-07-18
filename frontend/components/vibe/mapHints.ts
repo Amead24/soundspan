@@ -24,7 +24,7 @@ export function hintForMode(mode: VibeMode, ctx: HintContext = {}): string {
     }
     switch (mode) {
         case "travel":
-            return "Click a glowing halo to hop there · Shift-click queues · Ctrl+Shift plays next · Esc exits";
+            return "Click a glowing halo to hop there · Shift-click queues · Ctrl-click plays next · Esc exits";
         case "journey":
             return ctx.picking
                 ? "Click any dot to set the journey's destination"
@@ -33,6 +33,6 @@ export function hintForMode(mode: VibeMode, ctx: HintContext = {}): string {
             return "Click dots to add ingredients · blend 2–10 tracks";
         case "explore":
         default:
-            return "Click a dot to play & travel · Shift-click queues · Ctrl+Shift plays next · Ctrl-click blends";
+            return "Click a dot to play & travel · Shift-click queues · Ctrl-click plays next";
     }
 }

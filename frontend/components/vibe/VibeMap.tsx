@@ -1538,7 +1538,6 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
                                             : null
                                     }
                                     onHaloPointerDown={handleHaloPointerDown}
-                                    onHaloAddIngredient={vibe.addIngredient}
                                 />
                             }
                             sweepStroke={
@@ -1650,6 +1649,20 @@ export function VibeMap({ headerSlot, bottomInset }: VibeMapProps = {}) {
                                   : "Play a track (or pick one in Travel) to start a journey"
                         }
                         onStartJourney={vibe.startJourney}
+                        alchemyOpen={vibe.mode === "alchemy"}
+                        canOpenAlchemy={vibe.mode !== "journey"}
+                        alchemyHint={
+                            vibe.mode === "alchemy"
+                                ? "Close alchemy"
+                                : vibe.mode === "journey"
+                                  ? "Close the journey (Esc) first"
+                                  : "Blend tracks — open the tray, then click dots to add"
+                        }
+                        onToggleAlchemy={() =>
+                            vibe.mode === "alchemy"
+                                ? vibe.exitToExplore()
+                                : vibe.openAlchemy()
+                        }
                         queueOpen={auxSurface === "queue"}
                         onToggleQueue={() => toggleAuxSurface("queue")}
                         queueCount={Math.max(

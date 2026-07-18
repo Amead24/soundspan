@@ -1,10 +1,12 @@
 "use client";
 
 /**
- * AlchemyTray — the Alchemy-mode overlay. Ingredients are gathered by
- * ctrl/cmd-clicking dots (handled in useVibeMode); this renders each with a
- * weight slider + remove, blends them (≥2), and lists the results (which also
- * glow on the map). Presentational — all state lives in the hook.
+ * AlchemyTray — the Alchemy workspace panel, opened ONLY via the flask button
+ * in ViewControls (dot clicks never enter alchemy on their own). While open,
+ * clicking dots (plain or ctrl/cmd) adds ingredients (handled in useVibeMode);
+ * this renders each with a weight slider + remove, blends them (≥2), and lists
+ * the results (which also glow on the map). Presentational — all state lives
+ * in the hook.
  */
 
 import { FlaskConical, Loader2, Play, X } from "lucide-react";
@@ -45,7 +47,7 @@ export function AlchemyTray({ view }: { view: AlchemyView }) {
         >
 
             <p className="text-xs text-gray-400 mb-2">
-                Ctrl/⌘-click dots to add ingredients, then blend.
+                Click dots on the map to add ingredients, then blend.
             </p>
 
             <div className="flex flex-col gap-1.5 mb-3">

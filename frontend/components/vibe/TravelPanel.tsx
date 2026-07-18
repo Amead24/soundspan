@@ -142,7 +142,7 @@ export function NeighborRow({
                     quantiles={quantiles}
                     accentClass="text-indigo-300/80"
                     onClick={(e) =>
-                        (e.ctrlKey || e.metaKey) && e.shiftKey
+                        e.ctrlKey || e.metaKey
                             ? onPlayNext(n.id)
                             : e.shiftKey
                               ? onQueue(n.id)
@@ -150,8 +150,8 @@ export function NeighborRow({
                     }
                     hint={
                         offMap
-                            ? "Not on the map — click to play, shift-click to queue, ctrl+shift to play next"
-                            : "Click to travel here, shift-click to queue, ctrl+shift to play next"
+                            ? "Not on the map — click to play, shift-click to queue, ctrl-click to play next"
+                            : "Click to travel here, shift-click to queue, ctrl-click to play next"
                     }
                     className="flex-1"
                 />

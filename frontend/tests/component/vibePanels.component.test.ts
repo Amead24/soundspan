@@ -399,6 +399,56 @@ test("AlchemyTray disables Blend below two ingredients and shows an error", asyn
     assert.match(html, /blend those tracks/); // apostrophe is HTML-escaped
 });
 
+test("AlchemyTray renders as an empty workspace (opened via the flask button, 0 ingredients)", async () => {
+    const { AlchemyTray } = await panels();
+    const view = {
+        ingredients: [],
+        results: [],
+        loading: false,
+        error: null,
+        canBlend: false,
+        quantiles: null,
+        remove: noop,
+        setWeight: noop,
+        blend: noop,
+        play: noop,
+        clear: noop,
+    };
+    const html = renderToStaticMarkup(
+        React.createElement(AlchemyTray, { view })
+    );
+    assert.match(html, /0\/10/);
+    assert.match(html, /Click dots on the map to add ingredients/);
+    assert.match(html, /disabled=""/); // Blend button disabled at 0
+});
+
+test("ViewControls flask button reflects open state and the journey guard", async () => {
+    const { ViewControls } = await import(
+        "../../components/vibe/ViewControls"
+    );
+    const open = renderToStaticMarkup(
+        React.createElement(ViewControls, {
+            ...viewControlsBaseProps(),
+            alchemyOpen: true,
+            alchemyHint: "Close alchemy",
+        })
+    );
+    const openBtn = open.match(/<button[^>]*aria-label="Blend tracks \(alchemy\)"[^>]*>/);
+    assert.ok(openBtn, "flask button rendered");
+    assert.match(openBtn[0], /aria-pressed="true"/);
+
+    const guarded = renderToStaticMarkup(
+        React.createElement(ViewControls, {
+            ...viewControlsBaseProps(),
+            canOpenAlchemy: false,
+            alchemyHint: "Close the journey (Esc) first",
+        })
+    );
+    const guardedBtn = guarded.match(/<button[^>]*aria-label="Blend tracks \(alchemy\)"[^>]*>/);
+    assert.ok(guardedBtn, "flask button rendered");
+    assert.match(guardedBtn[0], /disabled=""/);
+});
+
 // --- NowPlayingCard -------------------------------------------------------
 
 async function nowPlayingCard() {
@@ -726,6 +776,10 @@ function viewControlsBaseProps() {
         canStartJourney: true,
         journeyHint: "Plan a journey from the current track",
         onStartJourney: noop,
+        alchemyOpen: false,
+        canOpenAlchemy: true,
+        alchemyHint: "Blend tracks — open the tray, then click dots to add",
+        onToggleAlchemy: noop,
         trailMode: "on" as const,
         onSetTrailMode: noop,
         trailPopoverOpen: false,
@@ -757,6 +811,7 @@ test("ViewControls exposes labelled zoom/reset/layout/brush/locate/journey/trail
     assert.match(html, /aria-label="Sweep brush"/);
     assert.match(html, /aria-label="Locate now playing"/);
     assert.match(html, /aria-label="Start a journey"/);
+    assert.match(html, /aria-label="Blend tracks \(alchemy\)"/);
     assert.match(html, /aria-label="Session trail settings"/);
     assert.match(html, /aria-label="About this map"/);
     assert.match(html, /aria-label="Enter fullscreen"/);

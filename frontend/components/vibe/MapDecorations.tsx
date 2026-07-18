@@ -65,8 +65,6 @@ export interface MapDecorationsProps {
      * the same drag state the canvas's own pointerdown does.
      */
     onHaloPointerDown?: (e: React.PointerEvent<SVGCircleElement>) => void;
-    /** ctrl/⌘-click on a halo adds the neighbour to the alchemy tray. */
-    onHaloAddIngredient?: (id: string) => void;
 }
 
 export function MapDecorations({
@@ -76,7 +74,6 @@ export function MapDecorations({
     journey,
     quantiles = null,
     onHaloPointerDown,
-    onHaloAddIngredient,
 }: MapDecorationsProps) {
     const nodes: React.ReactNode[] = [];
 
@@ -143,11 +140,12 @@ export function MapDecorations({
                         style={{ pointerEvents: "auto", cursor: "pointer" }}
                         onPointerDown={onHaloPointerDown}
                         onClick={(e) => {
+                            // Same grammar as canvas dots (onDotClick):
+                            // ctrl(-shift) = play next; alchemy never opens
+                            // from a click, and halos only exist in travel
+                            // mode where the workspace can't be open anyway.
                             if (e.ctrlKey || e.metaKey) {
-                                // Ctrl+Shift = queue as next song, same
-                                // gesture as canvas dots (onDotClick).
-                                if (e.shiftKey) travel.onPlayNext(n.id);
-                                else onHaloAddIngredient?.(n.id);
+                                travel.onPlayNext(n.id);
                                 return;
                             }
                             if (e.shiftKey) travel.onQueue(n.id);
